@@ -2,13 +2,13 @@ name: Deploy Backend
 
 on:
   push:
-    branches: [main]
+    branches: [dev, main]
     paths:
       - "PlayCode/**"
       - "!PlayCode/PlayCircleApp/**"
       - ".github/workflows/deploy-backend.yml"
   pull_request:
-    branches: [main]
+    branches: [dev, main]
     paths:
       - "PlayCode/**"
       - "!PlayCode/PlayCircleApp/**"
@@ -36,19 +36,20 @@ jobs:
         working-directory: PlayCode
         run: python -m py_compile $(find app -name "*.py")
 
-      # There's no automated test suite yet — add pytest here once one exists.
-      # This job intentionally fails the build on any import/syntax error so
-      # a broken PR can't be merged and a broken deploy never reaches Azure.
-
-  deploy:
+  # Push to `dev` -> Azure Dev, automatically, no approval needed.
+  # This is intentionally the only deploy job for now. When you're ready to
+  # promote to UAT/Prod, add "deploy-uat" (environment: uat, if: branch==main)
+  # and "deploy-prod" (environment: production, needs: deploy-uat) here —
+  # same file, same pattern, each pulling its own environment's secrets.
+  deploy-dev:
     needs: test
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
-    environment: production
+    environment: dev
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy to Azure App Service
+      - name: Deploy to Azure App Service (Dev)
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
