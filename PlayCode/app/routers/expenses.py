@@ -28,6 +28,20 @@ async def _require_circle_member_for_game(conn, game_id: uuid.UUID, user_id: uui
         raise HTTPException(status_code=403, detail="You must be a member of this game's circle")
 
 
+async def _require_game_owner(conn, game_id: uuid.UUID, user_id: uuid.UUID):
+    """The 'owner' of an expense-bearing game is whoever created/scheduled it —
+    only they can log expenses for the game or mark splits as paid."""
+    game_row = await conn.fetchrow(
+        "SELECT creator_user_id FROM social.games WHERE id = $1", game_id
+    )
+    if game_row is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+    if game_row["creator_user_id"] != user_id:
+        raise HTTPException(
+            status_code=403, detail="Only the game's creator can do this"
+        )
+
+
 def _equal_split(amount: Decimal, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, Decimal]:
     """Split amount into len(user_ids) shares of 2dp each, summing exactly to amount.
     Extra cents (from rounding) go to the first users, sorted for determinism."""
@@ -81,7 +95,7 @@ async def create_expense(
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await _require_circle_member_for_game(conn, game_id, current_user_id)
+            await _require_game_owner(conn, game_id, current_user_id)
 
             paid_by = payload.paid_by_user_id or current_user_id
             confirmed_rows = await conn.fetch(
@@ -142,14 +156,19 @@ async def create_expense(
             expense_id = expense_row["id"]
 
             for user_id, share_amount in shares.items():
+                # The payer already covered their own share by paying up front —
+                # everyone else starts pending until the owner marks them paid.
+                is_payer = user_id == paid_by
                 await conn.execute(
                     """
-                    INSERT INTO financial.expense_splits (expense_id, user_id, share_amount)
-                    VALUES ($1, $2, $3)
+                    INSERT INTO financial.expense_splits
+                        (expense_id, user_id, share_amount, is_settled, settled_at)
+                    VALUES ($1, $2, $3, $4, CASE WHEN $4 THEN now() ELSE NULL END)
                     """,
                     expense_id,
                     user_id,
                     share_amount,
+                    is_payer,
                 )
 
     return await _fetch_expense_detail(pool, expense_id)
@@ -205,18 +224,16 @@ async def settle_split(
     async with pool.acquire() as conn:
         async with conn.transaction():
             expense_row = await conn.fetchrow(
-                "SELECT paid_by_user_id FROM financial.expenses WHERE id = $1", expense_id
+                "SELECT game_id FROM financial.expenses WHERE id = $1", expense_id
             )
             if expense_row is None:
                 raise HTTPException(status_code=404, detail="Expense not found")
 
-            # Either the person who owes the split, or the person who paid the expense
-            # (confirming they received the money), can mark it settled.
-            if current_user_id not in (user_id, expense_row["paid_by_user_id"]):
+            if expense_row["game_id"] is None:
                 raise HTTPException(
-                    status_code=403,
-                    detail="Only the split owner or the payer can settle this split",
+                    status_code=422, detail="This expense isn't tied to a game"
                 )
+            await _require_game_owner(conn, expense_row["game_id"], current_user_id)
 
             split_row = await conn.fetchrow(
                 "SELECT is_settled FROM financial.expense_splits WHERE expense_id = $1 AND user_id = $2",
