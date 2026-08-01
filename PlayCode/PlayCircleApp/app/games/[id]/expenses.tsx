@@ -159,6 +159,7 @@ export default function GameExpensesScreen() {
   }
 
   const total = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+  const isGameOwner = me?.user_id === game.creator_user_id;
 
   return (
     <View style={styles.container}>
@@ -177,58 +178,60 @@ export default function GameExpensesScreen() {
               <Text style={styles.summaryAmount}>{formatMoney(total, 'INR')}</Text>
             </View>
 
-            <View style={styles.composerCard}>
-              <TextInput
-                style={styles.input}
-                placeholder="What was it for? e.g. Court booking"
-                value={description}
-                onChangeText={setDescription}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Amount, e.g. 800.00"
-                value={amount}
-                onChangeText={setAmount}
-                keyboardType="decimal-pad"
-              />
-              <Text style={styles.fieldLabel}>Who actually paid?</Text>
-              <View style={styles.payerRow}>
-                {game.participants
-                  .filter((p) => p.status === 'confirmed')
-                  .map((p) => (
-                    <Pressable
-                      key={p.user_id}
-                      style={[styles.payerChip, payerId === p.user_id && styles.payerChipSelected]}
-                      onPress={() => setPayerId(p.user_id)}
-                    >
-                      <Text
-                        style={[
-                          styles.payerChipText,
-                          payerId === p.user_id && styles.payerChipTextSelected,
-                        ]}
+            {isGameOwner && (
+              <View style={styles.composerCard}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="What was it for? e.g. Court booking"
+                  value={description}
+                  onChangeText={setDescription}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Amount, e.g. 800.00"
+                  value={amount}
+                  onChangeText={setAmount}
+                  keyboardType="decimal-pad"
+                />
+                <Text style={styles.fieldLabel}>Who actually paid?</Text>
+                <View style={styles.payerRow}>
+                  {game.participants
+                    .filter((p) => p.status === 'confirmed')
+                    .map((p) => (
+                      <Pressable
+                        key={p.user_id}
+                        style={[styles.payerChip, payerId === p.user_id && styles.payerChipSelected]}
+                        onPress={() => setPayerId(p.user_id)}
                       >
-                        {p.display_name}
-                      </Text>
-                    </Pressable>
-                  ))}
-              </View>
-              <Text style={styles.hintText}>
-                Splits equally among the game's {game.confirmed_count} confirmed players.
-                {payerId && ` ${game.participants.find((p) => p.user_id === payerId)?.display_name}'s share is marked paid automatically.`}
-              </Text>
-              <Pressable
-                style={[
-                  styles.addButton,
-                  (!description.trim() || !amount.trim() || !payerId || creating) && styles.disabledButton,
-                ]}
-                onPress={handleCreateExpense}
-                disabled={!description.trim() || !amount.trim() || !payerId || creating}
-              >
-                <Text style={styles.addButtonText}>
-                  {creating ? 'Adding...' : 'Add Expense'}
+                        <Text
+                          style={[
+                            styles.payerChipText,
+                            payerId === p.user_id && styles.payerChipTextSelected,
+                          ]}
+                        >
+                          {p.display_name}
+                        </Text>
+                      </Pressable>
+                    ))}
+                </View>
+                <Text style={styles.hintText}>
+                  Splits equally among the game's {game.confirmed_count} confirmed players.
+                  {payerId && ` ${game.participants.find((p) => p.user_id === payerId)?.display_name}'s share is marked paid automatically.`}
                 </Text>
-              </Pressable>
-            </View>
+                <Pressable
+                  style={[
+                    styles.addButton,
+                    (!description.trim() || !amount.trim() || !payerId || creating) && styles.disabledButton,
+                  ]}
+                  onPress={handleCreateExpense}
+                  disabled={!description.trim() || !amount.trim() || !payerId || creating}
+                >
+                  <Text style={styles.addButtonText}>
+                    {creating ? 'Adding...' : 'Add Expense'}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
           </View>
         }
         ListEmptyComponent={
@@ -254,10 +257,7 @@ export default function GameExpensesScreen() {
                   <ActivityIndicator size="small" color="#1F6F50" />
                 ) : (
                   expandedDetail?.splits.map((split) => {
-                    const canSettle =
-                      !split.is_settled &&
-                      me &&
-                      (me.user_id === split.user_id || me.user_id === item.paid_by_user_id);
+                    const canSettle = !split.is_settled && isGameOwner;
                     return (
                       <View key={split.id} style={styles.splitRow}>
                         <View style={styles.splitInfo}>

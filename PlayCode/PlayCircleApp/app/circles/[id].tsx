@@ -13,7 +13,7 @@ import {
 
 import { showAlert } from '../../lib/alert';
 import { api, ApiError } from '../../lib/api';
-import { Circle, Game, UserPublic, Venue } from '../../lib/types';
+import { Circle, CircleMember, Game, UserPublic, Venue } from '../../lib/types';
 
 const FORMATS: Array<Game['format']> = ['doubles', 'singles'];
 
@@ -41,6 +41,7 @@ export default function CircleDetailScreen() {
   const [circle, setCircle] = useState<Circle | null>(null);
   const [games, setGames] = useState<Game[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
+  const [members, setMembers] = useState<CircleMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,14 +63,16 @@ export default function CircleDetailScreen() {
     if (!id) return;
     setError(null);
     try {
-      const [circleResult, gamesResult, venuesResult] = await Promise.all([
+      const [circleResult, gamesResult, venuesResult, membersResult] = await Promise.all([
         api.get<Circle>(`/circles/${id}`),
         api.get<Game[]>(`/games?circle_id=${id}`),
         api.get<Venue[]>('/venues'),
+        api.get<CircleMember[]>(`/circles/${id}/members`),
       ]);
       setCircle(circleResult);
       setGames(gamesResult);
       setVenues(venuesResult);
+      setMembers(membersResult);
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -217,6 +220,21 @@ export default function CircleDetailScreen() {
           {circle.member_count} {circle.member_count === 1 ? 'member' : 'members'} · you're{' '}
           {circle.my_role}
         </Text>
+      )}
+
+      {members.length > 0 && (
+        <View style={styles.membersRow}>
+          {members.map((m) => (
+            <View key={m.user_id} style={styles.memberChip}>
+              <Text style={styles.memberChipName}>{m.display_name}</Text>
+              {m.role !== 'member' && (
+                <View style={styles.memberRoleBadge}>
+                  <Text style={styles.memberRoleBadgeText}>{m.role}</Text>
+                </View>
+              )}
+            </View>
+          ))}
+        </View>
       )}
 
       <View style={styles.actionRow}>
@@ -442,6 +460,38 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7A73',
     marginBottom: 12,
+    textTransform: 'capitalize',
+  },
+  membersRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  memberChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F1F4F2',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  memberChipName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#173A2E',
+  },
+  memberRoleBadge: {
+    backgroundColor: '#1F6F50',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  memberRoleBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#fff',
     textTransform: 'capitalize',
   },
   actionRow: {

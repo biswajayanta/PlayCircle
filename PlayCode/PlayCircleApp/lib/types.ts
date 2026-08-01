@@ -157,3 +157,9 @@ export interface UserPublic {
   bio: string;
   city: string | null;
 }
+export interface CircleMember {
+  user_id: string;
+  display_name: string;
+  role: 'owner' | 'captain' | 'member';
+  joined_at: string;
+}

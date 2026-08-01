@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.db import get_pool
 from app.deps import get_current_user_id
-from app.schemas.circle import AddMemberRequest, CircleCreate, CircleOut
+from app.schemas.circle import AddMemberRequest, CircleCreate, CircleMemberOut, CircleOut
 
 router = APIRouter()
 
@@ -86,6 +86,37 @@ async def get_circle(
         # avoids confirming the existence of circles you can't see into.
         raise HTTPException(status_code=404, detail="Circle not found")
     return CircleOut(**dict(row))
+
+
+@router.get("/circles/{circle_id}/members", response_model=list[CircleMemberOut])
+async def list_circle_members(
+    circle_id: uuid.UUID,
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    pool = get_pool()
+    is_member = await pool.fetchval(
+        "SELECT 1 FROM social.circle_members WHERE circle_id = $1 AND user_id = $2",
+        circle_id,
+        current_user_id,
+    )
+    if not is_member:
+        # 404 here too, same reasoning as get_circle — don't confirm a
+        # circle you can't see into even exists.
+        raise HTTPException(status_code=404, detail="Circle not found")
+
+    rows = await pool.fetch(
+        """
+        SELECT u.id AS user_id, u.display_name, cm.role, cm.joined_at
+        FROM social.circle_members cm
+        JOIN core.users u ON u.id = cm.user_id
+        WHERE cm.circle_id = $1
+        ORDER BY
+            CASE cm.role WHEN 'owner' THEN 0 WHEN 'captain' THEN 1 ELSE 2 END,
+            u.display_name
+        """,
+        circle_id,
+    )
+    return [CircleMemberOut(**dict(r)) for r in rows]
 
 
 @router.post("/circles/{circle_id}/members", response_model=CircleOut, status_code=201)

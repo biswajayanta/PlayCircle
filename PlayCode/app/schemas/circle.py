@@ -26,3 +26,10 @@ class CircleOut(BaseModel):
     my_role: str
     member_count: int
     created_at: datetime
+
+
+class CircleMemberOut(BaseModel):
+    user_id: uuid.UUID
+    display_name: str
+    role: str
+    joined_at: datetime
