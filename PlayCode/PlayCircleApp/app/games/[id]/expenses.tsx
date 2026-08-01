@@ -41,6 +41,7 @@ export default function GameExpensesScreen() {
 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
+  const [payerId, setPayerId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -60,6 +61,7 @@ export default function GameExpensesScreen() {
       setMe(meResult);
       setGame(gameResult);
       setExpenses(expensesResult);
+      setPayerId((prev) => prev ?? meResult.user_id);
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -76,7 +78,7 @@ export default function GameExpensesScreen() {
   }, [load]);
 
   async function handleCreateExpense() {
-    if (!id || !description.trim() || !amount.trim()) return;
+    if (!id || !description.trim() || !amount.trim() || !payerId) return;
     const numericAmount = Number(amount);
     if (Number.isNaN(numericAmount) || numericAmount <= 0) {
       showAlert('Invalid amount', 'Enter a number greater than 0, e.g. 800.00');
@@ -88,10 +90,12 @@ export default function GameExpensesScreen() {
       const created = await api.post<ExpenseDetail>(`/games/${id}/expenses`, {
         description: description.trim(),
         amount: numericAmount.toFixed(2),
+        paid_by_user_id: payerId,
       });
       setExpenses((prev) => [created, ...prev]);
       setDescription('');
       setAmount('');
+      setPayerId(me?.user_id ?? null);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to add expense';
       showAlert('Could not add expense', message);
@@ -187,16 +191,38 @@ export default function GameExpensesScreen() {
                 onChangeText={setAmount}
                 keyboardType="decimal-pad"
               />
+              <Text style={styles.fieldLabel}>Who actually paid?</Text>
+              <View style={styles.payerRow}>
+                {game.participants
+                  .filter((p) => p.status === 'confirmed')
+                  .map((p) => (
+                    <Pressable
+                      key={p.user_id}
+                      style={[styles.payerChip, payerId === p.user_id && styles.payerChipSelected]}
+                      onPress={() => setPayerId(p.user_id)}
+                    >
+                      <Text
+                        style={[
+                          styles.payerChipText,
+                          payerId === p.user_id && styles.payerChipTextSelected,
+                        ]}
+                      >
+                        {p.display_name}
+                      </Text>
+                    </Pressable>
+                  ))}
+              </View>
               <Text style={styles.hintText}>
                 Splits equally among the game's {game.confirmed_count} confirmed players.
+                {payerId && ` ${game.participants.find((p) => p.user_id === payerId)?.display_name}'s share is marked paid automatically.`}
               </Text>
               <Pressable
                 style={[
                   styles.addButton,
-                  (!description.trim() || !amount.trim() || creating) && styles.disabledButton,
+                  (!description.trim() || !amount.trim() || !payerId || creating) && styles.disabledButton,
                 ]}
                 onPress={handleCreateExpense}
-                disabled={!description.trim() || !amount.trim() || creating}
+                disabled={!description.trim() || !amount.trim() || !payerId || creating}
               >
                 <Text style={styles.addButtonText}>
                   {creating ? 'Adding...' : 'Add Expense'}
@@ -319,6 +345,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7A73',
+    marginTop: 2,
+  },
+  payerRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  payerChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D6DED9',
+  },
+  payerChipSelected: {
+    backgroundColor: '#1F6F50',
+    borderColor: '#1F6F50',
+  },
+  payerChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#173A2E',
+  },
+  payerChipTextSelected: {
+    color: '#fff',
   },
   hintText: {
     fontSize: 12,
