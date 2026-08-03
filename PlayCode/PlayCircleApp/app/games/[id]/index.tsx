@@ -280,7 +280,7 @@ export default function GameDetailScreen() {
   const isActive = game.status !== 'completed' && game.status !== 'cancelled';
 
   function canManageParticipant(p: { user_id: string }): boolean {
-    if (!isActive || game.is_past) return false;
+    if (!isActive || game!.is_past) return false;
     if (p.user_id === game!.creator_user_id) return false; // creator can't be removed/leave
     const isSelf = p.user_id === me?.user_id;
     return isSelf || isGameOwner;
