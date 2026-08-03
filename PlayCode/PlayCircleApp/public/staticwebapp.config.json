@@ -1,0 +1,11 @@
+{
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": [
+      "/_expo/*",
+      "/favicon.ico",
+      "/metadata.json",
+      "*.{png,jpg,jpeg,gif,svg,ico,js,css,map,json,woff,woff2,ttf,eot}"
+    ]
+  }
+}
