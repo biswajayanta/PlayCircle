@@ -278,12 +278,9 @@ export default function GameDetailScreen() {
 
   const isGameOwner = me?.user_id === game.creator_user_id;
   const isActive = game.status !== 'completed' && game.status !== 'cancelled';
-  const gameDateStr = game.scheduled_at.slice(0, 10);
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const isPastDue = gameDateStr < todayStr;
 
   function canManageParticipant(p: { user_id: string }): boolean {
-    if (!isActive || isPastDue) return false;
+    if (!isActive || game.is_past) return false;
     if (p.user_id === game!.creator_user_id) return false; // creator can't be removed/leave
     const isSelf = p.user_id === me?.user_id;
     return isSelf || isGameOwner;
@@ -306,6 +303,7 @@ export default function GameDetailScreen() {
               <Text style={styles.infoSubtitle}>{formatScheduledAt(game.scheduled_at)}</Text>
               <Text style={styles.infoMeta}>
                 {game.confirmed_count} {game.confirmed_count === 1 ? 'player' : 'players'} joined · {game.status}
+                {game.is_past && isActive ? ' · Past' : ''}
               </Text>
 
               <View style={styles.linkRow}>
@@ -325,15 +323,17 @@ export default function GameDetailScreen() {
 
               {isGameOwner && isActive && (
                 <View style={styles.linkRow}>
-                  <Pressable
-                    style={styles.expensesLink}
-                    onPress={() => {
-                      setRescheduleInput(game.scheduled_at.slice(0, 16));
-                      setRescheduleOpen(true);
-                    }}
-                  >
-                    <Text style={styles.expensesLinkText}>🗓️ Reschedule</Text>
-                  </Pressable>
+                  {!game.is_past && (
+                    <Pressable
+                      style={styles.expensesLink}
+                      onPress={() => {
+                        setRescheduleInput(game.scheduled_at.slice(0, 16));
+                        setRescheduleOpen(true);
+                      }}
+                    >
+                      <Text style={styles.expensesLinkText}>🗓️ Reschedule</Text>
+                    </Pressable>
+                  )}
                   <Pressable
                     style={styles.cancelLink}
                     onPress={() => setCancelConfirmOpen(true)}
@@ -385,7 +385,7 @@ export default function GameDetailScreen() {
                   </Pressable>
                 ))
               )}
-              {isActive && (
+              {isActive && !game.is_past && (
                 <Pressable
                   style={styles.startMatchButton}
                   onPress={() => router.push(`/games/${id}/new-match`)}

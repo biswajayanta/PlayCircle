@@ -26,6 +26,7 @@ class GameOut(BaseModel):
     status: str
     confirmed_count: int
     already_joined: bool
+    is_past: bool
     created_at: datetime
 
 

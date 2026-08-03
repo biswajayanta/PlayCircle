@@ -330,7 +330,7 @@ export default function CircleDetailScreen() {
         }
         renderItem={({ item }) => {
           const statusStyle = STATUS_COLORS[item.status];
-          const canJoin = item.status === 'open' && !item.already_joined;
+          const canJoin = item.status === 'open' && !item.already_joined && !item.is_past;
           return (
             <View style={styles.card}>
               <Pressable onPress={() => router.push(`/games/${item.id}`)}>
@@ -345,6 +345,7 @@ export default function CircleDetailScreen() {
                 <Text style={styles.cardSubtitle}>{formatScheduledAt(item.scheduled_at)}</Text>
                 <Text style={styles.cardMeta}>
                   {item.confirmed_count} {item.confirmed_count === 1 ? 'player' : 'players'} joined
+                  {item.is_past && item.status !== 'cancelled' ? ' · Past' : ''}
                 </Text>
               </Pressable>
               {canJoin && (

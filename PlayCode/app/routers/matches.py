@@ -1,5 +1,7 @@
 import json
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -18,6 +20,15 @@ from app.scoring.registry import get_engine
 
 router = APIRouter()
 
+# Same day-level (not exact time) cutoff used for joining/leaving a game —
+# a match can't be *started* once the game's date has passed, though an
+# already-in-progress match can still be scored past midnight.
+_TZ = ZoneInfo("Asia/Kolkata")
+
+
+def _is_past_date(scheduled_at: datetime) -> bool:
+    return scheduled_at.astimezone(_TZ).date() < datetime.now(_TZ).date()
+
 _MATCH_COLUMNS = """
     m.id, m.game_id, m.sport_id, sp.name AS sport_name, m.format,
     m.started_at, m.ended_at, m.score, m.status, m.created_at
@@ -26,7 +37,7 @@ _MATCH_COLUMNS = """
 
 async def _require_circle_member_for_game(conn, game_id: uuid.UUID, user_id: uuid.UUID):
     game_row = await conn.fetchrow(
-        "SELECT circle_id, sport_id, status FROM social.games WHERE id = $1", game_id
+        "SELECT circle_id, sport_id, status, scheduled_at FROM social.games WHERE id = $1", game_id
     )
     if game_row is None:
         raise HTTPException(status_code=404, detail="Game not found")
@@ -236,6 +247,11 @@ async def create_match(
             if game_row["status"] in ("cancelled", "completed"):
                 raise HTTPException(
                     status_code=409, detail=f"This game is {game_row['status']}"
+                )
+            if _is_past_date(game_row["scheduled_at"]):
+                raise HTTPException(
+                    status_code=409,
+                    detail="This game's date has passed — no new matches can be started",
                 )
 
             sport_name = await conn.fetchval(

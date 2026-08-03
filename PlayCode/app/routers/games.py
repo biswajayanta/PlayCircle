@@ -23,7 +23,8 @@ _GAME_COLUMNS = """
     EXISTS (
         SELECT 1 FROM social.game_participants gp2
         WHERE gp2.game_id = g.id AND gp2.user_id = $__USER__ AND gp2.status = 'confirmed'
-    ) AS already_joined
+    ) AS already_joined,
+    (g.scheduled_at AT TIME ZONE '""" + _TZ + """')::date < (now() AT TIME ZONE '""" + _TZ + """')::date AS is_past
 """
 
 

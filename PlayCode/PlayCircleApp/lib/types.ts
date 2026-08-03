@@ -38,6 +38,7 @@ export interface Game {
   status: 'open' | 'full' | 'completed' | 'cancelled';
   confirmed_count: number;
   already_joined: boolean;
+  is_past: boolean;
   created_at: string;
 }
 
