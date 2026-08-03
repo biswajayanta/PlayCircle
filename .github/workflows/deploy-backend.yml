@@ -17,6 +17,31 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PLAYCIRCLE_DB_HOST: 127.0.0.1
+      PLAYCIRCLE_PORT: 5432
+      PLAYCIRCLE_USER: postgres
+      PLAYCIRCLE_PASSWORD: ci-only-password
+      # PLAYCIRCLE_NAME is deliberately not set here — conftest.py always
+      # targets a fixed, obviously-a-test database name, as a safety net
+      # against ever pointing the suite at something real.
+
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +51,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: PlayCode
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-test.txt
 
       - name: Smoke test — app imports cleanly
         working-directory: PlayCode
@@ -36,11 +61,10 @@ jobs:
         working-directory: PlayCode
         run: python -m py_compile $(find app -name "*.py")
 
-  # Push to `dev` -> Azure Dev, automatically, no approval needed.
-  # This is intentionally the only deploy job for now. When you're ready to
-  # promote to UAT/Prod, add "deploy-uat" (environment: uat, if: branch==main)
-  # and "deploy-prod" (environment: production, needs: deploy-uat) here —
-  # same file, same pattern, each pulling its own environment's secrets.
+      - name: Run regression suite
+        working-directory: PlayCode
+        run: python -m pytest tests/ -v
+
   deploy-dev:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'

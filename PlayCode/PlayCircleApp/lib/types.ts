@@ -34,11 +34,10 @@ export interface Game {
   circle_name: string;
   creator_user_id: string;
   scheduled_at: string;
-  format: 'singles' | 'doubles';
   visibility: 'open' | 'circle' | 'private';
   status: 'open' | 'full' | 'completed' | 'cancelled';
   confirmed_count: number;
-  capacity: number;
+  already_joined: boolean;
   created_at: string;
 }
 
@@ -140,6 +139,7 @@ export interface Match {
   game_id: string;
   sport_id: number;
   sport_name: string;
+  format: 'singles' | 'doubles';
   started_at: string;
   ended_at: string | null;
   score: MatchScore;
@@ -162,4 +162,71 @@ export interface CircleMember {
   display_name: string;
   role: 'owner' | 'captain' | 'member';
   joined_at: string;
+}
+export interface VenueUsage {
+  venue_name: string;
+  games_count: number;
+}
+
+export interface CircleReport {
+  circle_id: string;
+  circle_name: string;
+  member_count: number;
+  games_completed: number;
+  games_upcoming: number;
+  games_cancelled: number;
+  games_unplayed_past: number;
+  games_total: number;
+  total_spent: string;
+  venues: VenueUsage[];
+}
+
+export interface MatchSummary {
+  match_id: string;
+  format: 'singles' | 'doubles';
+  started_at: string;
+  ended_at: string | null;
+  status: 'in_progress' | 'completed' | 'abandoned';
+  team_1_players: string[];
+  team_2_players: string[];
+  team_1_score: number;
+  team_2_score: number;
+  winning_team: string[] | null;
+}
+
+export interface GameReport {
+  game_id: string;
+  venue_name: string;
+  scheduled_at: string;
+  status: string;
+  total_expenses: string;
+  matches: MatchSummary[];
+}
+
+export interface SettlementTransaction {
+  from_user_id: string;
+  from_display_name: string;
+  to_user_id: string;
+  to_display_name: string;
+  amount: string;
+}
+
+export interface SettlementPlan {
+  game_id: string;
+  fully_settled: boolean;
+  transactions: SettlementTransaction[];
+}
+
+export interface LeaderboardEntry {
+  user_id: string;
+  display_name: string;
+  matches_played: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+}
+
+export interface CircleLeaderboard {
+  circle_id: string;
+  entries: LeaderboardEntry[];
 }

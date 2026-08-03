@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -46,9 +46,11 @@ export default function HomeScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   async function handleCreateCircle() {
     const name = newCircleName.trim();
@@ -98,6 +100,7 @@ export default function HomeScreen() {
 
       <View style={styles.createRow}>
         <TextInput
+        placeholderTextColor="#9AA69E"
           style={styles.input}
           placeholder="New circle name"
           value={newCircleName}

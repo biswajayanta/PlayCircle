@@ -1,9 +1,10 @@
-import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -11,11 +12,24 @@ import {
   View,
 } from 'react-native';
 
-import { showAlert } from '../../lib/alert';
-import { api, ApiError } from '../../lib/api';
-import { Circle, CircleMember, Game, UserPublic, Venue } from '../../lib/types';
+import { showAlert } from '../../../lib/alert';
+import { api, ApiError } from '../../../lib/api';
+import { Circle, CircleMember, Game, UserPublic, Venue } from '../../../lib/types';
 
-const FORMATS: Array<Game['format']> = ['doubles', 'singles'];
+// Plain CSS-in-JS for the raw <input type="datetime-local"> used on web —
+// this isn't a React Native style object, it's real DOM CSS properties.
+const webDateInputStyle: React.CSSProperties = {
+  border: '1px solid #D6DED9',
+  borderRadius: 8,
+  padding: '12px 14px',
+  fontSize: 15,
+  backgroundColor: '#fff',
+  marginBottom: 12,
+  width: '100%',
+  boxSizing: 'border-box',
+  color: '#173A2E',
+  fontFamily: 'inherit',
+};
 
 const STATUS_COLORS: Record<Game['status'], { bg: string; text: string }> = {
   open: { bg: '#E6F1EC', text: '#1F6F50' },
@@ -47,7 +61,6 @@ export default function CircleDetailScreen() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
-  const [format, setFormat] = useState<Game['format']>('doubles');
   const [scheduledAtInput, setScheduledAtInput] = useState('');
   const [creating, setCreating] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
@@ -58,6 +71,10 @@ export default function CircleDetailScreen() {
   const [searching, setSearching] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [addingMember, setAddingMember] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<CircleMember | null>(null);
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -84,9 +101,11 @@ export default function CircleDetailScreen() {
     }
   }, [id]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   async function handleCreateGame() {
     if (!id || !selectedVenue) return;
@@ -105,13 +124,11 @@ export default function CircleDetailScreen() {
         sport_id: selectedVenue.sport_id,
         venue_id: selectedVenue.id,
         scheduled_at: scheduledAt.toISOString(),
-        format,
       });
       setGames((prev) => [...prev, created].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at)));
       setCreateOpen(false);
       setSelectedVenue(null);
       setScheduledAtInput('');
-      setFormat('doubles');
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to create game';
       showAlert('Could not create game', message);
@@ -192,6 +209,39 @@ export default function CircleDetailScreen() {
     }
   }
 
+  async function handleRemoveMember() {
+    if (!id || !removeTarget) return;
+    setRemovingUserId(removeTarget.user_id);
+    try {
+      await api.delete(`/circles/${id}/members/${removeTarget.user_id}`);
+      setMembers((prev) => prev.filter((m) => m.user_id !== removeTarget.user_id));
+      setCircle((prev) => (prev ? { ...prev, member_count: prev.member_count - 1 } : prev));
+      setRemoveTarget(null);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Failed to remove member';
+      showAlert('Could not remove', message);
+    } finally {
+      setRemovingUserId(null);
+    }
+  }
+
+  async function handleLeaveCircle() {
+    if (!id) return;
+    setLeaving(true);
+    try {
+      await api.post(`/circles/${id}/leave`);
+      setLeaveConfirmOpen(false);
+      showAlert('You left the circle', "You can rejoin anytime you're re-added.");
+      router.back();
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Failed to leave circle';
+      setLeaveConfirmOpen(false);
+      showAlert('Could not leave', message);
+    } finally {
+      setLeaving(false);
+    }
+  }
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -232,14 +282,35 @@ export default function CircleDetailScreen() {
                   <Text style={styles.memberRoleBadgeText}>{m.role}</Text>
                 </View>
               )}
+              {circle?.my_role === 'owner' && m.role !== 'owner' && (
+                <Pressable
+                  onPress={() => setRemoveTarget(m)}
+                  disabled={removingUserId === m.user_id}
+                  hitSlop={6}
+                >
+                  <Text style={styles.memberRemoveX}>✕</Text>
+                </Pressable>
+              )}
             </View>
           ))}
         </View>
       )}
 
+      {circle && circle.my_role !== 'owner' && (
+        <Pressable style={styles.leaveLink} onPress={() => setLeaveConfirmOpen(true)}>
+          <Text style={styles.leaveLinkText}>Leave this circle</Text>
+        </Pressable>
+      )}
+
       <View style={styles.actionRow}>
         <Pressable style={styles.newGameButton} onPress={() => setCreateOpen(true)}>
           <Text style={styles.newGameButtonText}>+ New Game</Text>
+        </Pressable>
+        <Pressable
+          style={styles.reportButton}
+          onPress={() => router.push(`/circles/${id}/report`)}
+        >
+          <Text style={styles.reportButtonText}>📊 Report</Text>
         </Pressable>
         {circle && (circle.my_role === 'owner' || circle.my_role === 'captain') && (
           <Pressable style={styles.addMemberButton} onPress={() => setAddMemberOpen(true)}>
@@ -259,7 +330,7 @@ export default function CircleDetailScreen() {
         }
         renderItem={({ item }) => {
           const statusStyle = STATUS_COLORS[item.status];
-          const canJoin = item.status === 'open';
+          const canJoin = item.status === 'open' && !item.already_joined;
           return (
             <View style={styles.card}>
               <Pressable onPress={() => router.push(`/games/${item.id}`)}>
@@ -273,7 +344,7 @@ export default function CircleDetailScreen() {
                 </View>
                 <Text style={styles.cardSubtitle}>{formatScheduledAt(item.scheduled_at)}</Text>
                 <Text style={styles.cardMeta}>
-                  {item.format} · {item.confirmed_count}/{item.capacity} confirmed
+                  {item.confirmed_count} {item.confirmed_count === 1 ? 'player' : 'players'} joined
                 </Text>
               </Pressable>
               {canJoin && (
@@ -322,33 +393,24 @@ export default function CircleDetailScreen() {
               )}
             />
 
-            <Text style={styles.fieldLabel}>Format</Text>
-            <View style={styles.formatRow}>
-              {FORMATS.map((f) => (
-                <Pressable
-                  key={f}
-                  style={[styles.formatOption, format === f && styles.formatOptionSelected]}
-                  onPress={() => setFormat(f)}
-                >
-                  <Text
-                    style={[
-                      styles.formatOptionText,
-                      format === f && styles.formatOptionTextSelected,
-                    ]}
-                  >
-                    {f}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
             <Text style={styles.fieldLabel}>Date &amp; time</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="2026-07-25 18:00"
-              value={scheduledAtInput}
-              onChangeText={setScheduledAtInput}
-            />
+            {Platform.OS === 'web' ? (
+              React.createElement('input', {
+                type: 'datetime-local',
+                value: scheduledAtInput,
+                onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+                  setScheduledAtInput(e.target.value),
+                style: webDateInputStyle,
+              })
+            ) : (
+              <TextInput
+                placeholderTextColor="#9AA69E"
+                style={styles.input}
+                placeholder="2026-07-25 18:00"
+                value={scheduledAtInput}
+                onChangeText={setScheduledAtInput}
+              />
+            )}
 
             <View style={styles.modalActions}>
               <Pressable
@@ -381,6 +443,7 @@ export default function CircleDetailScreen() {
 
             <Text style={styles.fieldLabel}>Search by name</Text>
             <TextInput
+        placeholderTextColor="#9AA69E"
               style={styles.input}
               placeholder="Search public profiles..."
               value={searchQuery}
@@ -410,6 +473,7 @@ export default function CircleDetailScreen() {
 
             <Text style={styles.fieldLabel}>Or add by exact email</Text>
             <TextInput
+        placeholderTextColor="#9AA69E"
               style={styles.input}
               placeholder="their@email.com"
               value={emailInput}
@@ -432,6 +496,64 @@ export default function CircleDetailScreen() {
               >
                 <Text style={styles.modalCreateButtonText}>
                   {addingMember ? 'Adding...' : 'Add by email'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={removeTarget !== null} animationType="fade" transparent>
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmCard}>
+            <Text style={styles.modalTitle}>Remove {removeTarget?.display_name}?</Text>
+            <Text style={styles.modalBodyText}>
+              They'll lose access to this circle and its games. Their existing
+              history stays intact, and you can add them back anytime.
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalCancelButton} onPress={() => setRemoveTarget(null)}>
+                <Text style={styles.modalCancelButtonText}>Never mind</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.modalDangerButton,
+                  removingUserId !== null && styles.disabledButton,
+                ]}
+                onPress={handleRemoveMember}
+                disabled={removingUserId !== null}
+              >
+                <Text style={styles.modalConfirmButtonText}>
+                  {removingUserId !== null ? 'Removing...' : 'Yes, remove'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={leaveConfirmOpen} animationType="fade" transparent>
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmCard}>
+            <Text style={styles.modalTitle}>Leave this circle?</Text>
+            <Text style={styles.modalBodyText}>
+              You'll lose access to its games and reports. Someone in the
+              circle can add you back anytime.
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalCancelButton}
+                onPress={() => setLeaveConfirmOpen(false)}
+              >
+                <Text style={styles.modalCancelButtonText}>Never mind</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalDangerButton, leaving && styles.disabledButton]}
+                onPress={handleLeaveCircle}
+                disabled={leaving}
+              >
+                <Text style={styles.modalConfirmButtonText}>
+                  {leaving ? 'Leaving...' : 'Yes, leave'}
                 </Text>
               </Pressable>
             </View>
@@ -494,6 +616,52 @@ const styles = StyleSheet.create({
     color: '#fff',
     textTransform: 'capitalize',
   },
+  memberRemoveX: {
+    fontSize: 13,
+    color: '#B3261E',
+    fontWeight: '700',
+    marginLeft: 2,
+  },
+  leaveLink: {
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+  },
+  leaveLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#B3261E',
+  },
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  confirmCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+  },
+  modalBodyText: {
+    fontSize: 14,
+    color: '#6B7A73',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  modalDangerButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#B3261E',
+    alignItems: 'center',
+  },
+  modalConfirmButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
   actionRow: {
     flexDirection: 'row',
     gap: 10,
@@ -505,6 +673,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 10,
+  },
+  reportButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F1F4F2',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  reportButtonText: {
+    color: '#1F6F50',
+    fontWeight: '600',
   },
   addMemberButton: {
     alignSelf: 'flex-start',

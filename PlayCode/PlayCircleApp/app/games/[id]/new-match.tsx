@@ -7,6 +7,7 @@ import { api, ApiError } from '../../../lib/api';
 import { GameDetail, MatchDetail } from '../../../lib/types';
 
 type TeamAssignment = Record<string, 1 | 2 | undefined>;
+type MatchFormat = 'singles' | 'doubles';
 
 export default function NewMatchScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -14,6 +15,7 @@ export default function NewMatchScreen() {
   const [game, setGame] = useState<GameDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [format, setFormat] = useState<MatchFormat>('doubles');
   const [assignments, setAssignments] = useState<TeamAssignment>({});
   const [starting, setStarting] = useState(false);
 
@@ -42,10 +44,18 @@ export default function NewMatchScreen() {
     setAssignments((prev) => ({ ...prev, [userId]: prev[userId] === team ? undefined : team }));
   }
 
+  function changeFormat(next: MatchFormat) {
+    // Switching formats changes how many players each team needs, so a
+    // previous partial assignment could become invalid — clearest to just
+    // start the selection over.
+    setFormat(next);
+    setAssignments({});
+  }
+
   const confirmedParticipants = (game?.participants ?? []).filter(
     (p) => p.status === 'confirmed'
   );
-  const perTeamNeeded = game?.format === 'singles' ? 1 : 2;
+  const perTeamNeeded = format === 'singles' ? 1 : 2;
   const team1Count = Object.values(assignments).filter((t) => t === 1).length;
   const team2Count = Object.values(assignments).filter((t) => t === 2).length;
   const readyToStart = team1Count === perTeamNeeded && team2Count === perTeamNeeded;
@@ -57,7 +67,7 @@ export default function NewMatchScreen() {
       const participants = Object.entries(assignments)
         .filter(([, team]) => team !== undefined)
         .map(([user_id, team]) => ({ user_id, team }));
-      const match = await api.post<MatchDetail>(`/games/${id}/matches`, { participants });
+      const match = await api.post<MatchDetail>(`/games/${id}/matches`, { format, participants });
       router.replace(`/matches/${match.id}`);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to start match';
@@ -89,8 +99,32 @@ export default function NewMatchScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ title: 'New Match' }} />
+
+      <View style={styles.formatRow}>
+        <Pressable
+          style={[styles.formatButton, format === 'singles' && styles.formatButtonSelected]}
+          onPress={() => changeFormat('singles')}
+        >
+          <Text
+            style={[styles.formatButtonText, format === 'singles' && styles.formatButtonTextSelected]}
+          >
+            Singles
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.formatButton, format === 'doubles' && styles.formatButtonSelected]}
+          onPress={() => changeFormat('doubles')}
+        >
+          <Text
+            style={[styles.formatButtonText, format === 'doubles' && styles.formatButtonTextSelected]}
+          >
+            Doubles
+          </Text>
+        </Pressable>
+      </View>
+
       <Text style={styles.hint}>
-        {game.format === 'singles'
+        {format === 'singles'
           ? 'Tap a player, then tap Team 1 or Team 2 for each (1 per team).'
           : 'Tap Team 1 or Team 2 for each player (2 per team).'}
       </Text>
@@ -165,11 +199,38 @@ const styles = StyleSheet.create({
     backgroundColor: '#F7F9F8',
     paddingHorizontal: 24,
   },
+  formatRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  formatButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D6DED9',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  formatButtonSelected: {
+    backgroundColor: '#1F6F50',
+    borderColor: '#1F6F50',
+  },
+  formatButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#173A2E',
+  },
+  formatButtonTextSelected: {
+    color: '#fff',
+  },
   hint: {
     fontSize: 13,
     color: '#6B7A73',
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
   },
   listContent: {
     padding: 16,

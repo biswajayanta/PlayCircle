@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+FORMAT_CAPACITY = {"singles": 1, "doubles": 2}  # players per TEAM (not per match)
+
 
 class MatchParticipantIn(BaseModel):
     user_id: uuid.UUID
@@ -11,6 +13,7 @@ class MatchParticipantIn(BaseModel):
 
 
 class MatchCreate(BaseModel):
+    format: str = Field(..., pattern="^(singles|doubles)$")
     started_at: datetime | None = None  # defaults to now() if omitted
     participants: list[MatchParticipantIn] = Field(..., min_length=2)
 
@@ -56,6 +59,7 @@ class MatchOut(BaseModel):
     game_id: uuid.UUID
     sport_id: int
     sport_name: str
+    format: str
     started_at: datetime
     ended_at: datetime | None = None
     score: dict[str, Any]

@@ -9,25 +9,30 @@ import {
   View,
 } from 'react-native';
 
-import { ApiError } from '../lib/api';
+import { ApiError, api } from '../lib/api';
 import { showAlert } from '../lib/alert';
-import { useAuth } from '../lib/authContext';
 
-export default function LoginScreen() {
-  const { login } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+export default function ResetPasswordScreen() {
+  const [token, setToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  async function handleLogin() {
-    if (!email.trim() || !password) return;
+  const canSubmit = token.trim().length > 0 && newPassword.length >= 8;
+
+  async function handleSubmit() {
+    if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
-      router.replace('/');
+      await api.post('/auth/reset-password', {
+        token: token.trim(),
+        new_password: newPassword,
+      });
+      showAlert('Password reset', 'You can now log in with your new password.');
+      router.replace('/login');
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Could not log in';
-      showAlert('Login failed', message);
+      const message =
+        err instanceof ApiError ? err.message : 'Something went wrong';
+      showAlert('Could not reset password', message);
     } finally {
       setSubmitting(false);
     }
@@ -35,48 +40,44 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>PlayCircle</Text>
-      <Text style={styles.subtitle}>Log in to see your circles and games</Text>
+      <Text style={styles.title}>Enter your reset code</Text>
+      <Text style={styles.subtitle}>
+        Paste the reset code you were given, then choose a new password.
+      </Text>
 
       <TextInput
         placeholderTextColor="#9AA69E"
         style={styles.input}
-        placeholder="Email"
-        value={email}
-        onChangeText={setEmail}
+        placeholder="Reset code"
+        value={token}
+        onChangeText={setToken}
         autoCapitalize="none"
-        keyboardType="email-address"
       />
       <TextInput
         placeholderTextColor="#9AA69E"
         style={styles.input}
-        placeholder="Password"
-        value={password}
-        onChangeText={setPassword}
+        placeholder="New password (min 8 characters)"
+        value={newPassword}
+        onChangeText={setNewPassword}
         secureTextEntry
-        onSubmitEditing={handleLogin}
+        onSubmitEditing={handleSubmit}
       />
 
       <Pressable
-        style={[styles.button, (!email.trim() || !password || submitting) && styles.disabled]}
-        onPress={handleLogin}
-        disabled={!email.trim() || !password || submitting}
+        style={[styles.button, (!canSubmit || submitting) && styles.disabled]}
+        onPress={handleSubmit}
+        disabled={!canSubmit || submitting}
       >
         {submitting ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.buttonText}>Log In</Text>
+          <Text style={styles.buttonText}>Reset password</Text>
         )}
       </Pressable>
 
-      <Link href="/forgot-password" style={styles.forgotLink}>
-        <Text style={styles.forgotLinkText}>Forgot password?</Text>
-      </Link>
-
       <View style={styles.footerRow}>
-        <Text style={styles.footerText}>New here? </Text>
-        <Link href="/signup" replace>
-          <Text style={styles.footerLink}>Create an account</Text>
+        <Link href="/login" replace>
+          <Text style={styles.footerLink}>Back to log in</Text>
         </Link>
       </View>
     </View>
@@ -91,17 +92,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
   },
   title: {
-    fontSize: 30,
+    fontSize: 24,
     fontWeight: '800',
     color: '#1F6F50',
     textAlign: 'center',
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 14,
     color: '#6B7A73',
     textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 32,
+    marginBottom: 24,
   },
   input: {
     borderWidth: 1,
@@ -132,19 +133,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 24,
-  },
-  forgotLink: {
-    alignSelf: 'center',
-    marginTop: 16,
-  },
-  forgotLinkText: {
-    color: '#6B7A73',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  footerText: {
-    color: '#6B7A73',
-    fontSize: 14,
   },
   footerLink: {
     color: '#1F6F50',

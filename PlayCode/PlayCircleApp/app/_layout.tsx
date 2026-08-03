@@ -8,7 +8,11 @@ function RootNavigator() {
   const { user, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  const inAuthScreen = segments[0] === 'login' || segments[0] === 'signup';
+  const inAuthScreen =
+    segments[0] === 'login' ||
+    segments[0] === 'signup' ||
+    segments[0] === 'forgot-password' ||
+    segments[0] === 'reset-password';
 
   useEffect(() => {
     if (loading) return;
@@ -43,9 +47,13 @@ function RootNavigator() {
     >
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="signup" options={{ headerShown: false }} />
+      <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+      <Stack.Screen name="reset-password" options={{ headerShown: false }} />
       <Stack.Screen name="index" options={{ title: 'My Circles' }} />
-      <Stack.Screen name="circles/[id]" options={{ title: 'Circle' }} />
+      <Stack.Screen name="circles/[id]/index" options={{ title: 'Circle' }} />
+      <Stack.Screen name="circles/[id]/report" options={{ title: 'Circle Report' }} />
       <Stack.Screen name="games/[id]/index" options={{ title: 'Game' }} />
+      <Stack.Screen name="games/[id]/report" options={{ title: 'Game Report' }} />
       <Stack.Screen name="games/[id]/expenses" options={{ title: 'Expenses' }} />
       <Stack.Screen name="games/[id]/new-match" options={{ title: 'New Match' }} />
       <Stack.Screen name="matches/[matchId]/index" options={{ title: 'Live Score' }} />

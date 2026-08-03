@@ -1,10 +1,14 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
 from app.db import connect_db, disconnect_db
-from app.routers import auth, circles, expenses, games, health, matches, posts, settlements, sports, users, venues
+from app.routers import auth, circles, expenses, games, health, matches, posts, reports, settlements, sports, users, venues
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
 
 
 @asynccontextmanager
@@ -16,12 +20,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PlayCircle API", lifespan=lifespan)
 
-# Dev-only CORS: Expo's web dev server runs on a different port (usually 8081 or 19006)
-# than this API (8000), so the browser blocks fetches unless we explicitly allow it.
-# Tighten allow_origins to your real frontend URL(s) before shipping to production.
+# Origins come from PLAYCIRCLE_CORS_ORIGINS (comma-separated), e.g. in Azure:
+#   PLAYCIRCLE_CORS_ORIGINS=https://playcircle.azurestaticapps.net
+# Local dev defaults to "*" only when nothing is set, so this stays safe by
+# default once a real value is configured in production.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,3 +43,4 @@ app.include_router(matches.router)
 app.include_router(expenses.router)
 app.include_router(settlements.router)
 app.include_router(posts.router)
+app.include_router(reports.router)

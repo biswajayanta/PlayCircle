@@ -43,12 +43,14 @@ export default function SignupScreen() {
       <Text style={styles.subtitle}>Create an account to organize games with your circle</Text>
 
       <TextInput
+        placeholderTextColor="#9AA69E"
         style={styles.input}
         placeholder="Your name"
         value={displayName}
         onChangeText={setDisplayName}
       />
       <TextInput
+        placeholderTextColor="#9AA69E"
         style={styles.input}
         placeholder="Email"
         value={email}
@@ -57,6 +59,7 @@ export default function SignupScreen() {
         keyboardType="email-address"
       />
       <TextInput
+        placeholderTextColor="#9AA69E"
         style={styles.input}
         placeholder="Password (min 8 characters)"
         value={password}
@@ -64,6 +67,7 @@ export default function SignupScreen() {
         secureTextEntry
       />
       <TextInput
+        placeholderTextColor="#9AA69E"
         style={styles.input}
         placeholder="City (optional)"
         value={city}

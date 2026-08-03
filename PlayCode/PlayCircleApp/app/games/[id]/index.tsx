@@ -1,8 +1,10 @@
-import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -12,7 +14,22 @@ import {
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
-import { GameDetail, Match, Post, PostDetail } from '../../../lib/types';
+import { GameDetail, Match, Post, PostDetail, UserMe } from '../../../lib/types';
+
+// Plain CSS-in-JS for the raw <input type="datetime-local"> used on web —
+// this isn't a React Native style object, it's real DOM CSS properties.
+const webDateInputStyle: React.CSSProperties = {
+  border: '1px solid #D6DED9',
+  borderRadius: 8,
+  padding: '12px 14px',
+  fontSize: 15,
+  backgroundColor: '#fff',
+  marginBottom: 12,
+  width: '100%',
+  boxSizing: 'border-box',
+  color: '#173A2E',
+  fontFamily: 'inherit',
+};
 
 function formatScheduledAt(iso: string): string {
   const date = new Date(iso);
@@ -40,10 +57,22 @@ export default function GameDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const [game, setGame] = useState<GameDetail | null>(null);
+  const [me, setMe] = useState<UserMe | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [rescheduleInput, setRescheduleInput] = useState('');
+  const [rescheduling, setRescheduling] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [removeParticipantTarget, setRemoveParticipantTarget] = useState<{
+    user_id: string;
+    display_name: string;
+  } | null>(null);
+  const [removingParticipantId, setRemovingParticipantId] = useState<string | null>(null);
 
   const [caption, setCaption] = useState('');
   const [posting, setPosting] = useState(false);
@@ -59,14 +88,16 @@ export default function GameDetailScreen() {
     if (!id) return;
     setError(null);
     try {
-      const [gameResult, postsResult, matchesResult] = await Promise.all([
+      const [gameResult, postsResult, matchesResult, meResult] = await Promise.all([
         api.get<GameDetail>(`/games/${id}`),
         api.get<Post[]>(`/games/${id}/posts`),
         api.get<Match[]>(`/games/${id}/matches`),
+        api.get<UserMe>('/me'),
       ]);
       setGame(gameResult);
       setPosts(postsResult);
       setMatches(matchesResult);
+      setMe(meResult);
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -78,9 +109,77 @@ export default function GameDetailScreen() {
     }
   }, [id]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
+  async function handleReschedule() {
+    if (!id || !rescheduleInput) return;
+    const newDate = new Date(rescheduleInput);
+    if (Number.isNaN(newDate.getTime())) {
+      showAlert('Invalid date', 'Please pick a valid date and time.');
+      return;
+    }
+    setRescheduling(true);
+    try {
+      const updated = await api.patch<GameDetail>(`/games/${id}/reschedule`, {
+        scheduled_at: newDate.toISOString(),
+      });
+      setGame(updated);
+      setRescheduleOpen(false);
+      setRescheduleInput('');
+      showAlert('Rescheduled', 'The game has been moved to the new time.');
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Failed to reschedule';
+      showAlert('Could not reschedule', message);
+    } finally {
+      setRescheduling(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!id) return;
+    setCancelling(true);
+    try {
+      const updated = await api.post<GameDetail>(`/games/${id}/cancel`);
+      setGame(updated);
+      setCancelConfirmOpen(false);
+      showAlert('Game cancelled', 'This game has been cancelled.');
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Failed to cancel';
+      setCancelConfirmOpen(false);
+      showAlert('Could not cancel', message);
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  async function handleRemoveParticipant() {
+    if (!id || !removeParticipantTarget) return;
+    setRemovingParticipantId(removeParticipantTarget.user_id);
+    try {
+      await api.delete(`/games/${id}/participants/${removeParticipantTarget.user_id}`);
+      setGame((prev) =>
+        prev
+          ? {
+              ...prev,
+              participants: prev.participants.filter(
+                (p) => p.user_id !== removeParticipantTarget.user_id
+              ),
+              confirmed_count: prev.confirmed_count - 1,
+            }
+          : prev
+      );
+      setRemoveParticipantTarget(null);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Failed to remove';
+      showAlert('Could not remove', message);
+    } finally {
+      setRemovingParticipantId(null);
+    }
+  }
 
   async function handlePost() {
     if (!id || !caption.trim()) return;
@@ -177,6 +276,19 @@ export default function GameDetailScreen() {
     );
   }
 
+  const isGameOwner = me?.user_id === game.creator_user_id;
+  const isActive = game.status !== 'completed' && game.status !== 'cancelled';
+  const gameDateStr = game.scheduled_at.slice(0, 10);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const isPastDue = gameDateStr < todayStr;
+
+  function canManageParticipant(p: { user_id: string }): boolean {
+    if (!isActive || isPastDue) return false;
+    if (p.user_id === game!.creator_user_id) return false; // creator can't be removed/leave
+    const isSelf = p.user_id === me?.user_id;
+    return isSelf || isGameOwner;
+  }
+
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ title: game.venue_name }} />
@@ -193,15 +305,43 @@ export default function GameDetailScreen() {
               <Text style={styles.infoTitle}>{game.venue_name}</Text>
               <Text style={styles.infoSubtitle}>{formatScheduledAt(game.scheduled_at)}</Text>
               <Text style={styles.infoMeta}>
-                {game.format} · {game.confirmed_count}/{game.capacity} confirmed · {game.status}
+                {game.confirmed_count} {game.confirmed_count === 1 ? 'player' : 'players'} joined · {game.status}
               </Text>
 
-              <Pressable
-                style={styles.expensesLink}
-                onPress={() => router.push(`/games/${id}/expenses`)}
-              >
-                <Text style={styles.expensesLinkText}>💰 View Expenses</Text>
-              </Pressable>
+              <View style={styles.linkRow}>
+                <Pressable
+                  style={styles.expensesLink}
+                  onPress={() => router.push(`/games/${id}/expenses`)}
+                >
+                  <Text style={styles.expensesLinkText}>💰 View Expenses</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.expensesLink}
+                  onPress={() => router.push(`/games/${id}/report`)}
+                >
+                  <Text style={styles.expensesLinkText}>📊 View Report</Text>
+                </Pressable>
+              </View>
+
+              {isGameOwner && isActive && (
+                <View style={styles.linkRow}>
+                  <Pressable
+                    style={styles.expensesLink}
+                    onPress={() => {
+                      setRescheduleInput(game.scheduled_at.slice(0, 16));
+                      setRescheduleOpen(true);
+                    }}
+                  >
+                    <Text style={styles.expensesLinkText}>🗓️ Reschedule</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.cancelLink}
+                    onPress={() => setCancelConfirmOpen(true)}
+                  >
+                    <Text style={styles.cancelLinkText}>✕ Cancel game</Text>
+                  </Pressable>
+                </View>
+              )}
 
               <Text style={styles.sectionLabel}>Players</Text>
               <View style={styles.participantsRow}>
@@ -209,6 +349,20 @@ export default function GameDetailScreen() {
                   <View key={p.user_id} style={styles.participantChip}>
                     <Text style={styles.participantName}>{p.display_name}</Text>
                     <Text style={styles.participantStatus}>{p.status}</Text>
+                    {canManageParticipant(p) && (
+                      <Pressable
+                        onPress={() =>
+                          setRemoveParticipantTarget({
+                            user_id: p.user_id,
+                            display_name: p.display_name,
+                          })
+                        }
+                        disabled={removingParticipantId === p.user_id}
+                        hitSlop={6}
+                      >
+                        <Text style={styles.participantRemoveX}>✕</Text>
+                      </Pressable>
+                    )}
                   </View>
                 ))}
               </View>
@@ -223,6 +377,7 @@ export default function GameDetailScreen() {
                     style={styles.matchRow}
                     onPress={() => router.push(`/matches/${m.id}`)}
                   >
+                    <Text style={styles.matchFormatText}>{m.format}</Text>
                     <Text style={styles.matchScoreText}>
                       {m.score.team_1 ?? 0} – {m.score.team_2 ?? 0}
                     </Text>
@@ -230,16 +385,19 @@ export default function GameDetailScreen() {
                   </Pressable>
                 ))
               )}
-              <Pressable
-                style={styles.startMatchButton}
-                onPress={() => router.push(`/games/${id}/new-match`)}
-              >
-                <Text style={styles.startMatchButtonText}>+ Start Match</Text>
-              </Pressable>
+              {isActive && (
+                <Pressable
+                  style={styles.startMatchButton}
+                  onPress={() => router.push(`/games/${id}/new-match`)}
+                >
+                  <Text style={styles.startMatchButtonText}>+ Start Match</Text>
+                </Pressable>
+              )}
             </View>
 
             <View style={styles.composerCard}>
               <TextInput
+        placeholderTextColor="#9AA69E"
                 style={styles.composerInput}
                 placeholder="Share something about this game..."
                 value={caption}
@@ -299,6 +457,7 @@ export default function GameDetailScreen() {
                     )}
                     <View style={styles.commentInputRow}>
                       <TextInput
+        placeholderTextColor="#9AA69E"
                         style={styles.commentInput}
                         placeholder="Add a comment..."
                         value={commentDraft}
@@ -321,6 +480,116 @@ export default function GameDetailScreen() {
           </View>
         )}
       />
+
+      <Modal visible={rescheduleOpen} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Reschedule game</Text>
+            {Platform.OS === 'web' ? (
+              React.createElement('input', {
+                type: 'datetime-local',
+                value: rescheduleInput,
+                onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+                  setRescheduleInput(e.target.value),
+                style: webDateInputStyle,
+              })
+            ) : (
+              <TextInput
+                placeholderTextColor="#9AA69E"
+                style={styles.input}
+                placeholder="2026-07-25 18:00"
+                value={rescheduleInput}
+                onChangeText={setRescheduleInput}
+              />
+            )}
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalCancelButton}
+                onPress={() => setRescheduleOpen(false)}
+              >
+                <Text style={styles.modalCancelButtonText}>Back</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.modalConfirmButton,
+                  (!rescheduleInput || rescheduling) && styles.disabledButton,
+                ]}
+                onPress={handleReschedule}
+                disabled={!rescheduleInput || rescheduling}
+              >
+                <Text style={styles.modalConfirmButtonText}>
+                  {rescheduling ? 'Saving...' : 'Save new time'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={cancelConfirmOpen} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Cancel this game?</Text>
+            <Text style={styles.modalBodyText}>
+              This can only be done if no matches have been played and all
+              expenses in this game are settled. This can't be undone.
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalCancelButton}
+                onPress={() => setCancelConfirmOpen(false)}
+              >
+                <Text style={styles.modalCancelButtonText}>Never mind</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalDangerButton, cancelling && styles.disabledButton]}
+                onPress={handleCancel}
+                disabled={cancelling}
+              >
+                <Text style={styles.modalConfirmButtonText}>
+                  {cancelling ? 'Cancelling...' : 'Yes, cancel it'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={removeParticipantTarget !== null} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {removeParticipantTarget?.user_id === me?.user_id
+                ? 'Leave this game?'
+                : `Remove ${removeParticipantTarget?.display_name}?`}
+            </Text>
+            <Text style={styles.modalBodyText}>
+              Only possible since they haven't played a match or logged an
+              expense in this game yet.
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalCancelButton}
+                onPress={() => setRemoveParticipantTarget(null)}
+              >
+                <Text style={styles.modalCancelButtonText}>Never mind</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.modalDangerButton,
+                  removingParticipantId !== null && styles.disabledButton,
+                ]}
+                onPress={handleRemoveParticipant}
+                disabled={removingParticipantId !== null}
+              >
+                <Text style={styles.modalConfirmButtonText}>
+                  {removingParticipantId !== null ? 'Removing...' : 'Confirm'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -373,8 +642,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#6B7A73',
   },
-  expensesLink: {
+  linkRow: {
+    flexDirection: 'row',
+    gap: 8,
     marginTop: 12,
+  },
+  expensesLink: {
     alignSelf: 'flex-start',
     backgroundColor: '#F1F4F2',
     borderRadius: 8,
@@ -385,6 +658,86 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#1F6F50',
+  },
+  cancelLink: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FDECEA',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  cancelLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#B3261E',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#173A2E',
+    marginBottom: 12,
+  },
+  modalBodyText: {
+    fontSize: 14,
+    color: '#6B7A73',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D6DED9',
+    alignItems: 'center',
+  },
+  modalCancelButtonText: {
+    color: '#173A2E',
+    fontWeight: '600',
+  },
+  modalConfirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#1F6F50',
+    alignItems: 'center',
+  },
+  modalDangerButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#B3261E',
+    alignItems: 'center',
+  },
+  modalConfirmButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#D6DED9',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    backgroundColor: '#fff',
+    marginBottom: 12,
   },
   noMatchesText: {
     fontSize: 13,
@@ -397,6 +750,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F4F2',
+  },
+  matchFormatText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7A73',
+    textTransform: 'capitalize',
   },
   matchScoreText: {
     fontSize: 15,
@@ -434,6 +793,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
     alignItems: 'center',
+  },
+  participantRemoveX: {
+    fontSize: 12,
+    color: '#B3261E',
+    fontWeight: '700',
   },
   participantName: {
     fontSize: 13,

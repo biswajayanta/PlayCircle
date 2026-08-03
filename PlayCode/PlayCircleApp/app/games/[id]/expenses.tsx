@@ -12,7 +12,7 @@ import {
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
-import { Expense, ExpenseDetail, GameDetail, UserMe } from '../../../lib/types';
+import { Expense, ExpenseDetail, GameDetail, SettlementPlan, UserMe } from '../../../lib/types';
 
 function formatMoney(amount: number | string, currency: string): string {
   const symbol = currency === 'INR' ? '₹' : `${currency} `;
@@ -48,19 +48,22 @@ export default function GameExpensesScreen() {
   const [expandedDetail, setExpandedDetail] = useState<ExpenseDetail | null>(null);
   const [expandedLoading, setExpandedLoading] = useState(false);
   const [settlingUserId, setSettlingUserId] = useState<string | null>(null);
+  const [settlementPlan, setSettlementPlan] = useState<SettlementPlan | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
     setError(null);
     try {
-      const [meResult, gameResult, expensesResult] = await Promise.all([
+      const [meResult, gameResult, expensesResult, settlementResult] = await Promise.all([
         api.get<UserMe>('/me'),
         api.get<GameDetail>(`/games/${id}`),
         api.get<Expense[]>(`/games/${id}/expenses`),
+        api.get<SettlementPlan>(`/games/${id}/settlement-plan`),
       ]);
       setMe(meResult);
       setGame(gameResult);
       setExpenses(expensesResult);
+      setSettlementPlan(settlementResult);
       setPayerId((prev) => prev ?? meResult.user_id);
     } catch (err) {
       setError(
@@ -76,6 +79,16 @@ export default function GameExpensesScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function refreshSettlementPlan() {
+    if (!id) return;
+    try {
+      const plan = await api.get<SettlementPlan>(`/games/${id}/settlement-plan`);
+      setSettlementPlan(plan);
+    } catch {
+      // Non-critical — the plan will still catch up on the next full reload.
+    }
+  }
 
   async function handleCreateExpense() {
     if (!id || !description.trim() || !amount.trim() || !payerId) return;
@@ -96,6 +109,7 @@ export default function GameExpensesScreen() {
       setDescription('');
       setAmount('');
       setPayerId(me?.user_id ?? null);
+      refreshSettlementPlan();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to add expense';
       showAlert('Could not add expense', message);
@@ -131,6 +145,7 @@ export default function GameExpensesScreen() {
         `/expenses/${expenseId}/splits/${userId}/settle`
       );
       setExpandedDetail(updated);
+      refreshSettlementPlan();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to settle split';
       showAlert('Could not settle', message);
@@ -178,15 +193,34 @@ export default function GameExpensesScreen() {
               <Text style={styles.summaryAmount}>{formatMoney(total, 'INR')}</Text>
             </View>
 
+            {settlementPlan && (
+              <View style={styles.settlementCard}>
+                <Text style={styles.settlementTitle}>Settlement plan</Text>
+                {settlementPlan.fully_settled ? (
+                  <Text style={styles.settlementEmptyText}>Everyone's settled up. 🎉</Text>
+                ) : (
+                  settlementPlan.transactions.map((t, i) => (
+                    <Text key={i} style={styles.settlementLine}>
+                      <Text style={styles.settlementName}>{t.from_display_name}</Text> owes{' '}
+                      <Text style={styles.settlementName}>{t.to_display_name}</Text>{' '}
+                      <Text style={styles.settlementAmount}>{formatMoney(t.amount, 'INR')}</Text>
+                    </Text>
+                  ))
+                )}
+              </View>
+            )}
+
             {isGameOwner && (
               <View style={styles.composerCard}>
                 <TextInput
+        placeholderTextColor="#9AA69E"
                   style={styles.input}
                   placeholder="What was it for? e.g. Court booking"
                   value={description}
                   onChangeText={setDescription}
                 />
                 <TextInput
+        placeholderTextColor="#9AA69E"
                   style={styles.input}
                   placeholder="Amount, e.g. 800.00"
                   value={amount}
@@ -318,6 +352,36 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
+  },
+  settlementCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E7ECE9',
+  },
+  settlementTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#173A2E',
+    marginBottom: 8,
+  },
+  settlementEmptyText: {
+    fontSize: 13,
+    color: '#6B7A73',
+  },
+  settlementLine: {
+    fontSize: 14,
+    color: '#173A2E',
+    marginBottom: 6,
+  },
+  settlementName: {
+    fontWeight: '700',
+  },
+  settlementAmount: {
+    fontWeight: '700',
+    color: '#1F6F50',
   },
   summaryLabel: {
     color: '#DCEEE5',

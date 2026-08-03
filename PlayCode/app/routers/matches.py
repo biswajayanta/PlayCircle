@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.db import get_pool
 from app.deps import get_current_user_id
 from app.schemas.match import (
+    FORMAT_CAPACITY,
     MatchComplete,
     MatchCreate,
     MatchDetail,
@@ -18,14 +19,14 @@ from app.scoring.registry import get_engine
 router = APIRouter()
 
 _MATCH_COLUMNS = """
-    m.id, m.game_id, m.sport_id, sp.name AS sport_name,
+    m.id, m.game_id, m.sport_id, sp.name AS sport_name, m.format,
     m.started_at, m.ended_at, m.score, m.status, m.created_at
 """
 
 
 async def _require_circle_member_for_game(conn, game_id: uuid.UUID, user_id: uuid.UUID):
     game_row = await conn.fetchrow(
-        "SELECT circle_id, sport_id FROM social.games WHERE id = $1", game_id
+        "SELECT circle_id, sport_id, status FROM social.games WHERE id = $1", game_id
     )
     if game_row is None:
         raise HTTPException(status_code=404, detail="Game not found")
@@ -232,24 +233,23 @@ async def create_match(
     async with pool.acquire() as conn:
         async with conn.transaction():
             game_row = await _require_circle_member_for_game(conn, game_id, current_user_id)
+            if game_row["status"] in ("cancelled", "completed"):
+                raise HTTPException(
+                    status_code=409, detail=f"This game is {game_row['status']}"
+                )
 
-            format_row = await conn.fetchrow(
-                """
-                SELECT g.format, sp.name AS sport_name
-                FROM social.games g
-                JOIN core.sports sp ON sp.id = g.sport_id
-                WHERE g.id = $1
-                """,
-                game_id,
+            sport_name = await conn.fetchval(
+                "SELECT name FROM core.sports WHERE id = $1", game_row["sport_id"]
             )
-            expected_per_team = 1 if format_row["format"] == "singles" else 2
+
+            expected_per_team = FORMAT_CAPACITY[payload.format]
             team_1_count = sum(1 for p in payload.participants if p.team == 1)
             team_2_count = sum(1 for p in payload.participants if p.team == 2)
             if team_1_count != expected_per_team or team_2_count != expected_per_team:
                 raise HTTPException(
                     status_code=422,
                     detail=(
-                        f"This is a {format_row['format']} game — each team needs exactly "
+                        f"This is a {payload.format} match — each team needs exactly "
                         f"{expected_per_team} player(s), got {team_1_count} and {team_2_count}"
                     ),
                 )
@@ -272,19 +272,20 @@ async def create_match(
                 )
 
             try:
-                engine = get_engine(format_row["sport_name"])
+                engine = get_engine(sport_name)
                 initial_score = engine.initial_score()
             except ValueError as e:
                 raise HTTPException(status_code=422, detail=str(e))
 
             match_row = await conn.fetchrow(
                 """
-                INSERT INTO social.matches (game_id, sport_id, started_at, score)
-                VALUES ($1, $2, COALESCE($3, now()), $4::jsonb)
+                INSERT INTO social.matches (game_id, sport_id, format, started_at, score)
+                VALUES ($1, $2, $3, COALESCE($4, now()), $5::jsonb)
                 RETURNING id
                 """,
                 game_id,
                 game_row["sport_id"],
+                payload.format,
                 payload.started_at,
                 json.dumps(initial_score),
             )

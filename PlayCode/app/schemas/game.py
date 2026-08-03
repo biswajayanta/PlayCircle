@@ -3,15 +3,12 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-FORMAT_CAPACITY = {"singles": 2, "doubles": 4}
-
 
 class GameCreate(BaseModel):
     sport_id: int
     venue_id: int
     circle_id: uuid.UUID
     scheduled_at: datetime
-    format: str = Field(default="doubles", pattern="^(singles|doubles)$")
     visibility: str = Field(default="circle", pattern="^(open|circle|private)$")
 
 
@@ -25,12 +22,15 @@ class GameOut(BaseModel):
     circle_name: str
     creator_user_id: uuid.UUID
     scheduled_at: datetime
-    format: str
     visibility: str
     status: str
     confirmed_count: int
-    capacity: int
+    already_joined: bool
     created_at: datetime
+
+
+class GameReschedule(BaseModel):
+    scheduled_at: datetime
 
 
 class GameParticipantOut(BaseModel):

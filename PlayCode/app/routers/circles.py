@@ -217,3 +217,66 @@ async def join_circle(
         current_user_id,
     )
     return CircleOut(**dict(row))
+
+
+@router.delete("/circles/{circle_id}/members/{user_id}", status_code=204)
+async def remove_member(
+    circle_id: uuid.UUID,
+    user_id: uuid.UUID,
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Owner removes someone else from the circle. Their history (games,
+    expenses, matches) is untouched — this only deletes the membership row,
+    so they can rejoin later and everything they were part of is still
+    there."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            circle_row = await conn.fetchrow(
+                "SELECT owner_user_id FROM social.circles WHERE id = $1", circle_id
+            )
+            if circle_row is None:
+                raise HTTPException(status_code=404, detail="Circle not found")
+            if circle_row["owner_user_id"] != current_user_id:
+                raise HTTPException(
+                    status_code=403, detail="Only the circle owner can remove members"
+                )
+            if user_id == circle_row["owner_user_id"]:
+                raise HTTPException(status_code=422, detail="The owner can't be removed")
+
+            deleted = await conn.execute(
+                "DELETE FROM social.circle_members WHERE circle_id = $1 AND user_id = $2",
+                circle_id,
+                user_id,
+            )
+            if deleted == "DELETE 0":
+                raise HTTPException(status_code=404, detail="That person isn't a member")
+
+
+@router.post("/circles/{circle_id}/leave", status_code=204)
+async def leave_circle(
+    circle_id: uuid.UUID,
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Self-leave. Same history-preservation as remove_member — only the
+    membership row goes away."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            circle_row = await conn.fetchrow(
+                "SELECT owner_user_id FROM social.circles WHERE id = $1", circle_id
+            )
+            if circle_row is None:
+                raise HTTPException(status_code=404, detail="Circle not found")
+            if circle_row["owner_user_id"] == current_user_id:
+                raise HTTPException(
+                    status_code=422, detail="Owners can't leave their own circle"
+                )
+
+            deleted = await conn.execute(
+                "DELETE FROM social.circle_members WHERE circle_id = $1 AND user_id = $2",
+                circle_id,
+                current_user_id,
+            )
+            if deleted == "DELETE 0":
+                raise HTTPException(status_code=404, detail="You're not a member of this circle")
