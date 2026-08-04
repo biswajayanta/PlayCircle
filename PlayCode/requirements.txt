@@ -4,6 +4,8 @@ asyncpg==0.31.0
 pydantic==2.13.4
 pydantic-settings==2.14.2
 python-dotenv==1.2.2
+tzdata
+gunicorn==26.0.0
 
 # Migrations
 alembic==1.18.5
@@ -13,3 +15,4 @@ psycopg2-binary==2.9.12
 # Auth
 python-jose[cryptography]==3.5.0
 bcrypt==5.0.0
+

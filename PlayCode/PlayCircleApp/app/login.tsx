@@ -2,6 +2,7 @@ import { Link, router } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -35,7 +36,11 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>PlayCircle</Text>
+      <Image
+        source={require('../assets/images/logo.png')}
+        style={styles.logo}
+        resizeMode="contain"
+      />
       <Text style={styles.subtitle}>Log in to see your circles and games</Text>
 
       <TextInput
@@ -90,11 +95,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 28,
   },
-  title: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: '#1F6F50',
-    textAlign: 'center',
+  logo: {
+    width: 240,
+    height: 174,
+    alignSelf: 'center',
   },
   subtitle: {
     fontSize: 14,

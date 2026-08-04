@@ -39,6 +39,8 @@ export interface Game {
   confirmed_count: number;
   already_joined: boolean;
   is_past: boolean;
+  has_expenses: boolean;
+  all_settled: boolean;
   created_at: string;
 }
 

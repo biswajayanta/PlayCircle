@@ -68,11 +68,6 @@ export default function GameDetailScreen() {
   const [rescheduling, setRescheduling] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [removeParticipantTarget, setRemoveParticipantTarget] = useState<{
-    user_id: string;
-    display_name: string;
-  } | null>(null);
-  const [removingParticipantId, setRemovingParticipantId] = useState<string | null>(null);
 
   const [caption, setCaption] = useState('');
   const [posting, setPosting] = useState(false);
@@ -153,31 +148,6 @@ export default function GameDetailScreen() {
       showAlert('Could not cancel', message);
     } finally {
       setCancelling(false);
-    }
-  }
-
-  async function handleRemoveParticipant() {
-    if (!id || !removeParticipantTarget) return;
-    setRemovingParticipantId(removeParticipantTarget.user_id);
-    try {
-      await api.delete(`/games/${id}/participants/${removeParticipantTarget.user_id}`);
-      setGame((prev) =>
-        prev
-          ? {
-              ...prev,
-              participants: prev.participants.filter(
-                (p) => p.user_id !== removeParticipantTarget.user_id
-              ),
-              confirmed_count: prev.confirmed_count - 1,
-            }
-          : prev
-      );
-      setRemoveParticipantTarget(null);
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Failed to remove';
-      showAlert('Could not remove', message);
-    } finally {
-      setRemovingParticipantId(null);
     }
   }
 
@@ -279,13 +249,6 @@ export default function GameDetailScreen() {
   const isGameOwner = me?.user_id === game.creator_user_id;
   const isActive = game.status !== 'completed' && game.status !== 'cancelled';
 
-  function canManageParticipant(p: { user_id: string }): boolean {
-    if (!isActive || game!.is_past) return false;
-    if (p.user_id === game!.creator_user_id) return false; // creator can't be removed/leave
-    const isSelf = p.user_id === me?.user_id;
-    return isSelf || isGameOwner;
-  }
-
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ title: game.venue_name }} />
@@ -307,6 +270,12 @@ export default function GameDetailScreen() {
               </Text>
 
               <View style={styles.linkRow}>
+                <Pressable
+                  style={styles.expensesLink}
+                  onPress={() => router.push(`/games/${id}/players`)}
+                >
+                  <Text style={styles.expensesLinkText}>👥 View Players</Text>
+                </Pressable>
                 <Pressable
                   style={styles.expensesLink}
                   onPress={() => router.push(`/games/${id}/expenses`)}
@@ -342,30 +311,6 @@ export default function GameDetailScreen() {
                   </Pressable>
                 </View>
               )}
-
-              <Text style={styles.sectionLabel}>Players</Text>
-              <View style={styles.participantsRow}>
-                {game.participants.map((p) => (
-                  <View key={p.user_id} style={styles.participantChip}>
-                    <Text style={styles.participantName}>{p.display_name}</Text>
-                    <Text style={styles.participantStatus}>{p.status}</Text>
-                    {canManageParticipant(p) && (
-                      <Pressable
-                        onPress={() =>
-                          setRemoveParticipantTarget({
-                            user_id: p.user_id,
-                            display_name: p.display_name,
-                          })
-                        }
-                        disabled={removingParticipantId === p.user_id}
-                        hitSlop={6}
-                      >
-                        <Text style={styles.participantRemoveX}>✕</Text>
-                      </Pressable>
-                    )}
-                  </View>
-                ))}
-              </View>
 
               <Text style={styles.sectionLabel}>Matches</Text>
               {matches.length === 0 ? (
@@ -555,41 +500,6 @@ export default function GameDetailScreen() {
         </View>
       </Modal>
 
-      <Modal visible={removeParticipantTarget !== null} animationType="fade" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>
-              {removeParticipantTarget?.user_id === me?.user_id
-                ? 'Leave this game?'
-                : `Remove ${removeParticipantTarget?.display_name}?`}
-            </Text>
-            <Text style={styles.modalBodyText}>
-              Only possible since they haven't played a match or logged an
-              expense in this game yet.
-            </Text>
-            <View style={styles.modalActions}>
-              <Pressable
-                style={styles.modalCancelButton}
-                onPress={() => setRemoveParticipantTarget(null)}
-              >
-                <Text style={styles.modalCancelButtonText}>Never mind</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.modalDangerButton,
-                  removingParticipantId !== null && styles.disabledButton,
-                ]}
-                onPress={handleRemoveParticipant}
-                disabled={removingParticipantId !== null}
-              >
-                <Text style={styles.modalConfirmButtonText}>
-                  {removingParticipantId !== null ? 'Removing...' : 'Confirm'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -641,6 +551,44 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#6B7A73',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  addPlayerLink: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1F6F50',
+  },
+  addPlayerList: {
+    maxHeight: 280,
+    marginBottom: 12,
+  },
+  addPlayerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F4F2',
+  },
+  addPlayerName: {
+    fontSize: 14,
+    color: '#173A2E',
+  },
+  addPlayerButton: {
+    backgroundColor: '#1F6F50',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  addPlayerButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 13,
   },
   linkRow: {
     flexDirection: 'row',

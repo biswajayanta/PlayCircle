@@ -1,5 +1,5 @@
 import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -14,7 +14,7 @@ import {
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
-import { Circle, CircleMember, Game, UserPublic, Venue } from '../../../lib/types';
+import { Circle, Game, Venue } from '../../../lib/types';
 
 // Plain CSS-in-JS for the raw <input type="datetime-local"> used on web —
 // this isn't a React Native style object, it's real DOM CSS properties.
@@ -49,13 +49,40 @@ function formatScheduledAt(iso: string): string {
   });
 }
 
+function expenseBadge(item: Game): { label: string; bg: string; text: string } {
+  if (!item.has_expenses) {
+    return { label: 'No expenses', bg: '#F1F4F2', text: '#6B7A73' };
+  }
+  if (item.all_settled) {
+    return { label: 'Settled up', bg: '#E6F1EC', text: '#1F6F50' };
+  }
+  return { label: 'Payment pending', bg: '#FDF2E3', text: '#9A6A00' };
+}
+
+// Today first, then upcoming games soonest-first, then past games most
+// recent first — so the list always opens on what's actually relevant to
+// act on right now, with history collapsible below it.
+function groupAndSortGames(games: Game[], showOlder: boolean): Game[] {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const dateStr = (g: Game) => g.scheduled_at.slice(0, 10);
+
+  const today = games.filter((g) => !g.is_past && dateStr(g) === todayStr);
+  const upcoming = games.filter((g) => !g.is_past && dateStr(g) > todayStr);
+  const older = games.filter((g) => g.is_past);
+
+  today.sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+  upcoming.sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+  older.sort((a, b) => b.scheduled_at.localeCompare(a.scheduled_at));
+
+  return [...today, ...upcoming, ...(showOlder ? older : [])];
+}
+
 export default function CircleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const [circle, setCircle] = useState<Circle | null>(null);
   const [games, setGames] = useState<Game[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
-  const [members, setMembers] = useState<CircleMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,32 +91,20 @@ export default function CircleDetailScreen() {
   const [scheduledAtInput, setScheduledAtInput] = useState('');
   const [creating, setCreating] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
-
-  const [addMemberOpen, setAddMemberOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<UserPublic[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [emailInput, setEmailInput] = useState('');
-  const [addingMember, setAddingMember] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState<CircleMember | null>(null);
-  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
-  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
-  const [leaving, setLeaving] = useState(false);
+  const [showOlderGames, setShowOlderGames] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
     setError(null);
     try {
-      const [circleResult, gamesResult, venuesResult, membersResult] = await Promise.all([
+      const [circleResult, gamesResult, venuesResult] = await Promise.all([
         api.get<Circle>(`/circles/${id}`),
         api.get<Game[]>(`/games?circle_id=${id}`),
         api.get<Venue[]>('/venues'),
-        api.get<CircleMember[]>(`/circles/${id}/members`),
       ]);
       setCircle(circleResult);
       setGames(gamesResult);
       setVenues(venuesResult);
-      setMembers(membersResult);
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -151,97 +166,6 @@ export default function CircleDetailScreen() {
     }
   }
 
-  useEffect(() => {
-    if (!addMemberOpen || searchQuery.trim().length === 0) {
-      setSearchResults([]);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const results = await api.get<UserPublic[]>(
-          `/users/search?q=${encodeURIComponent(searchQuery.trim())}`
-        );
-        setSearchResults(results);
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchQuery, addMemberOpen]);
-
-  async function handleAddByUserId(userId: string) {
-    if (!id) return;
-    setAddingMember(true);
-    try {
-      const updated = await api.post<Circle>(`/circles/${id}/members`, { user_id: userId });
-      setCircle(updated);
-      setAddMemberOpen(false);
-      setSearchQuery('');
-      setSearchResults([]);
-      showAlert('Added!', 'They can now see this circle and its games.');
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Failed to add member';
-      showAlert('Could not add', message);
-    } finally {
-      setAddingMember(false);
-    }
-  }
-
-  async function handleAddByEmail() {
-    if (!id || !emailInput.trim()) return;
-    setAddingMember(true);
-    try {
-      const updated = await api.post<Circle>(`/circles/${id}/members`, {
-        email: emailInput.trim(),
-      });
-      setCircle(updated);
-      setAddMemberOpen(false);
-      setEmailInput('');
-      showAlert('Added!', 'They can now see this circle and its games.');
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Failed to add member';
-      showAlert('Could not add', message);
-    } finally {
-      setAddingMember(false);
-    }
-  }
-
-  async function handleRemoveMember() {
-    if (!id || !removeTarget) return;
-    setRemovingUserId(removeTarget.user_id);
-    try {
-      await api.delete(`/circles/${id}/members/${removeTarget.user_id}`);
-      setMembers((prev) => prev.filter((m) => m.user_id !== removeTarget.user_id));
-      setCircle((prev) => (prev ? { ...prev, member_count: prev.member_count - 1 } : prev));
-      setRemoveTarget(null);
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Failed to remove member';
-      showAlert('Could not remove', message);
-    } finally {
-      setRemovingUserId(null);
-    }
-  }
-
-  async function handleLeaveCircle() {
-    if (!id) return;
-    setLeaving(true);
-    try {
-      await api.post(`/circles/${id}/leave`);
-      setLeaveConfirmOpen(false);
-      showAlert('You left the circle', "You can rejoin anytime you're re-added.");
-      router.back();
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Failed to leave circle';
-      setLeaveConfirmOpen(false);
-      showAlert('Could not leave', message);
-    } finally {
-      setLeaving(false);
-    }
-  }
-
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -261,44 +185,23 @@ export default function CircleDetailScreen() {
     );
   }
 
+  const olderGamesCount = games.filter((g) => g.is_past).length;
+  const displayedGames = groupAndSortGames(games, showOlderGames);
+
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ title: circle?.name ?? 'Circle' }} />
 
+      {circle && <Text style={styles.subtitle}>You're {circle.my_role}</Text>}
+
       {circle && (
-        <Text style={styles.subtitle}>
-          {circle.member_count} {circle.member_count === 1 ? 'member' : 'members'} · you're{' '}
-          {circle.my_role}
-        </Text>
-      )}
-
-      {members.length > 0 && (
-        <View style={styles.membersRow}>
-          {members.map((m) => (
-            <View key={m.user_id} style={styles.memberChip}>
-              <Text style={styles.memberChipName}>{m.display_name}</Text>
-              {m.role !== 'member' && (
-                <View style={styles.memberRoleBadge}>
-                  <Text style={styles.memberRoleBadgeText}>{m.role}</Text>
-                </View>
-              )}
-              {circle?.my_role === 'owner' && m.role !== 'owner' && (
-                <Pressable
-                  onPress={() => setRemoveTarget(m)}
-                  disabled={removingUserId === m.user_id}
-                  hitSlop={6}
-                >
-                  <Text style={styles.memberRemoveX}>✕</Text>
-                </Pressable>
-              )}
-            </View>
-          ))}
-        </View>
-      )}
-
-      {circle && circle.my_role !== 'owner' && (
-        <Pressable style={styles.leaveLink} onPress={() => setLeaveConfirmOpen(true)}>
-          <Text style={styles.leaveLinkText}>Leave this circle</Text>
+        <Pressable
+          style={styles.membersLink}
+          onPress={() => router.push(`/circles/${id}/members`)}
+        >
+          <Text style={styles.membersLinkText}>
+            👥 {circle.member_count} {circle.member_count === 1 ? 'Member' : 'Members'}
+          </Text>
         </Pressable>
       )}
 
@@ -312,15 +215,23 @@ export default function CircleDetailScreen() {
         >
           <Text style={styles.reportButtonText}>📊 Report</Text>
         </Pressable>
-        {circle && (circle.my_role === 'owner' || circle.my_role === 'captain') && (
-          <Pressable style={styles.addMemberButton} onPress={() => setAddMemberOpen(true)}>
-            <Text style={styles.addMemberButtonText}>+ Add Member</Text>
-          </Pressable>
-        )}
       </View>
 
+      {olderGamesCount > 0 && (
+        <Pressable
+          style={styles.toggleOlderButton}
+          onPress={() => setShowOlderGames((prev) => !prev)}
+        >
+          <Text style={styles.toggleOlderButtonText}>
+            {showOlderGames
+              ? 'Hide older games'
+              : `Show ${olderGamesCount} older ${olderGamesCount === 1 ? 'game' : 'games'}`}
+          </Text>
+        </Pressable>
+      )}
+
       <FlatList
-        data={games}
+        data={displayedGames}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         onRefresh={load}
@@ -330,6 +241,7 @@ export default function CircleDetailScreen() {
         }
         renderItem={({ item }) => {
           const statusStyle = STATUS_COLORS[item.status];
+          const expBadge = expenseBadge(item);
           const canJoin = item.status === 'open' && !item.already_joined && !item.is_past;
           return (
             <View style={styles.card}>
@@ -347,6 +259,11 @@ export default function CircleDetailScreen() {
                   {item.confirmed_count} {item.confirmed_count === 1 ? 'player' : 'players'} joined
                   {item.is_past && item.status !== 'cancelled' ? ' · Past' : ''}
                 </Text>
+                <View style={[styles.expenseBadge, { backgroundColor: expBadge.bg }]}>
+                  <Text style={[styles.expenseBadgeText, { color: expBadge.text }]}>
+                    {expBadge.label}
+                  </Text>
+                </View>
               </Pressable>
               {canJoin && (
                 <Pressable
@@ -437,130 +354,6 @@ export default function CircleDetailScreen() {
         </View>
       </Modal>
 
-      <Modal visible={addMemberOpen} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Add Member</Text>
-
-            <Text style={styles.fieldLabel}>Search by name</Text>
-            <TextInput
-        placeholderTextColor="#9AA69E"
-              style={styles.input}
-              placeholder="Search public profiles..."
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searching && <ActivityIndicator size="small" color="#1F6F50" style={{ marginTop: 8 }} />}
-            {!searching && searchQuery.trim().length > 0 && searchResults.length === 0 && (
-              <Text style={styles.noResultsText}>
-                No public profiles match. If you know their exact email, add them below instead.
-              </Text>
-            )}
-            <FlatList
-              data={searchResults}
-              keyExtractor={(u) => u.user_id}
-              style={styles.searchResultsList}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={styles.searchResultRow}
-                  onPress={() => handleAddByUserId(item.user_id)}
-                  disabled={addingMember}
-                >
-                  <Text style={styles.searchResultName}>{item.display_name}</Text>
-                  {item.city && <Text style={styles.searchResultCity}>{item.city}</Text>}
-                </Pressable>
-              )}
-            />
-
-            <Text style={styles.fieldLabel}>Or add by exact email</Text>
-            <TextInput
-        placeholderTextColor="#9AA69E"
-              style={styles.input}
-              placeholder="their@email.com"
-              value={emailInput}
-              onChangeText={setEmailInput}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-
-            <View style={styles.modalActions}>
-              <Pressable style={styles.modalCancelButton} onPress={() => setAddMemberOpen(false)}>
-                <Text style={styles.modalCancelButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.modalCreateButton,
-                  (!emailInput.trim() || addingMember) && styles.joinButtonDisabled,
-                ]}
-                onPress={handleAddByEmail}
-                disabled={!emailInput.trim() || addingMember}
-              >
-                <Text style={styles.modalCreateButtonText}>
-                  {addingMember ? 'Adding...' : 'Add by email'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={removeTarget !== null} animationType="fade" transparent>
-        <View style={styles.confirmOverlay}>
-          <View style={styles.confirmCard}>
-            <Text style={styles.modalTitle}>Remove {removeTarget?.display_name}?</Text>
-            <Text style={styles.modalBodyText}>
-              They'll lose access to this circle and its games. Their existing
-              history stays intact, and you can add them back anytime.
-            </Text>
-            <View style={styles.modalActions}>
-              <Pressable style={styles.modalCancelButton} onPress={() => setRemoveTarget(null)}>
-                <Text style={styles.modalCancelButtonText}>Never mind</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.modalDangerButton,
-                  removingUserId !== null && styles.disabledButton,
-                ]}
-                onPress={handleRemoveMember}
-                disabled={removingUserId !== null}
-              >
-                <Text style={styles.modalConfirmButtonText}>
-                  {removingUserId !== null ? 'Removing...' : 'Yes, remove'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={leaveConfirmOpen} animationType="fade" transparent>
-        <View style={styles.confirmOverlay}>
-          <View style={styles.confirmCard}>
-            <Text style={styles.modalTitle}>Leave this circle?</Text>
-            <Text style={styles.modalBodyText}>
-              You'll lose access to its games and reports. Someone in the
-              circle can add you back anytime.
-            </Text>
-            <View style={styles.modalActions}>
-              <Pressable
-                style={styles.modalCancelButton}
-                onPress={() => setLeaveConfirmOpen(false)}
-              >
-                <Text style={styles.modalCancelButtonText}>Never mind</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.modalDangerButton, leaving && styles.disabledButton]}
-                onPress={handleLeaveCircle}
-                disabled={leaving}
-              >
-                <Text style={styles.modalConfirmButtonText}>
-                  {leaving ? 'Leaving...' : 'Yes, leave'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -584,6 +377,19 @@ const styles = StyleSheet.create({
     color: '#6B7A73',
     marginBottom: 12,
     textTransform: 'capitalize',
+  },
+  membersLink: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F1F4F2',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginBottom: 16,
+  },
+  membersLinkText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#173A2E',
   },
   membersRow: {
     flexDirection: 'row',
@@ -744,6 +550,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'capitalize',
+  },
+  expenseBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    marginTop: 8,
+  },
+  expenseBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  toggleOlderButton: {
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+  },
+  toggleOlderButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1F6F50',
   },
   joinButton: {
     marginTop: 10,

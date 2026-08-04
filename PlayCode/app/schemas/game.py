@@ -27,11 +27,17 @@ class GameOut(BaseModel):
     confirmed_count: int
     already_joined: bool
     is_past: bool
+    has_expenses: bool
+    all_settled: bool
     created_at: datetime
 
 
 class GameReschedule(BaseModel):
     scheduled_at: datetime
+
+
+class AddParticipantRequest(BaseModel):
+    user_id: uuid.UUID
 
 
 class GameParticipantOut(BaseModel):

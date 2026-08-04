@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
 import { AuthProvider, useAuth } from '../lib/authContext';
+import Watermark from '../components/Watermark';
 
 function RootNavigator() {
   const { user, loading } = useAuth();
@@ -38,26 +39,31 @@ function RootNavigator() {
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerStyle: { backgroundColor: '#1F6F50' },
-        headerTintColor: '#fff',
-        headerTitleStyle: { fontWeight: '600' },
-      }}
-    >
-      <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="signup" options={{ headerShown: false }} />
-      <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
-      <Stack.Screen name="reset-password" options={{ headerShown: false }} />
-      <Stack.Screen name="index" options={{ title: 'My Circles' }} />
-      <Stack.Screen name="circles/[id]/index" options={{ title: 'Circle' }} />
-      <Stack.Screen name="circles/[id]/report" options={{ title: 'Circle Report' }} />
-      <Stack.Screen name="games/[id]/index" options={{ title: 'Game' }} />
-      <Stack.Screen name="games/[id]/report" options={{ title: 'Game Report' }} />
-      <Stack.Screen name="games/[id]/expenses" options={{ title: 'Expenses' }} />
-      <Stack.Screen name="games/[id]/new-match" options={{ title: 'New Match' }} />
-      <Stack.Screen name="matches/[matchId]/index" options={{ title: 'Live Score' }} />
-    </Stack>
+    <View style={{ flex: 1 }}>
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: '#1F6F50' },
+          headerTintColor: '#fff',
+          headerTitleStyle: { fontWeight: '600' },
+        }}
+      >
+        <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen name="signup" options={{ headerShown: false }} />
+        <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+        <Stack.Screen name="reset-password" options={{ headerShown: false }} />
+        <Stack.Screen name="index" options={{ title: 'My Circles' }} />
+        <Stack.Screen name="circles/[id]/index" options={{ title: 'Circle' }} />
+        <Stack.Screen name="circles/[id]/report" options={{ title: 'Circle Report' }} />
+        <Stack.Screen name="circles/[id]/members" options={{ title: 'Members' }} />
+        <Stack.Screen name="games/[id]/index" options={{ title: 'Game' }} />
+        <Stack.Screen name="games/[id]/report" options={{ title: 'Game Report' }} />
+        <Stack.Screen name="games/[id]/expenses" options={{ title: 'Expenses' }} />
+        <Stack.Screen name="games/[id]/new-match" options={{ title: 'New Match' }} />
+        <Stack.Screen name="games/[id]/players" options={{ title: 'Players' }} />
+        <Stack.Screen name="matches/[matchId]/index" options={{ title: 'Live Score' }} />
+      </Stack>
+      {!inAuthScreen && <Watermark />}
+    </View>
   );
 }
 

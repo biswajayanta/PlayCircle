@@ -5,7 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.db import get_pool
 from app.deps import get_current_user_id
-from app.schemas.game import GameCreate, GameDetail, GameOut, GameParticipantOut, GameReschedule
+from app.schemas.game import (
+    AddParticipantRequest,
+    GameCreate,
+    GameDetail,
+    GameOut,
+    GameParticipantOut,
+    GameReschedule,
+)
 
 router = APIRouter()
 
@@ -24,7 +31,15 @@ _GAME_COLUMNS = """
         SELECT 1 FROM social.game_participants gp2
         WHERE gp2.game_id = g.id AND gp2.user_id = $__USER__ AND gp2.status = 'confirmed'
     ) AS already_joined,
-    (g.scheduled_at AT TIME ZONE '""" + _TZ + """')::date < (now() AT TIME ZONE '""" + _TZ + """')::date AS is_past
+    (g.scheduled_at AT TIME ZONE '""" + _TZ + """')::date < (now() AT TIME ZONE '""" + _TZ + """')::date AS is_past,
+    EXISTS (
+        SELECT 1 FROM financial.expenses fe WHERE fe.game_id = g.id
+    ) AS has_expenses,
+    NOT EXISTS (
+        SELECT 1 FROM financial.expense_splits fes
+        JOIN financial.expenses fe2 ON fe2.id = fes.expense_id
+        WHERE fe2.game_id = g.id AND fes.is_settled = false
+    ) AS all_settled
 """
 
 
@@ -221,6 +236,71 @@ async def join_game(
                 """,
                 game_id,
                 current_user_id,
+            )
+
+    return await get_game(game_id, current_user_id)
+
+
+@router.post("/games/{game_id}/participants", response_model=GameDetail, status_code=201)
+async def add_participant(
+    game_id: uuid.UUID,
+    payload: AddParticipantRequest,
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """The game's creator adds a circle member directly, bypassing the
+    self-service join flow. Same rules as joining (day cutoff, active
+    status) apply — this is a shortcut for the owner, not a way around
+    those checks."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            game_row = await conn.fetchrow(
+                f"""
+                SELECT circle_id, status, creator_user_id,
+                    (scheduled_at AT TIME ZONE '{_TZ}')::date AS scheduled_date,
+                    (now() AT TIME ZONE '{_TZ}')::date AS today
+                FROM social.games WHERE id = $1 FOR UPDATE
+                """,
+                game_id,
+            )
+            if game_row is None:
+                raise HTTPException(status_code=404, detail="Game not found")
+            if game_row["creator_user_id"] != current_user_id:
+                raise HTTPException(
+                    status_code=403, detail="Only the game's creator can add players directly"
+                )
+            if game_row["status"] in ("completed", "cancelled"):
+                raise HTTPException(status_code=409, detail=f"Game is {game_row['status']}")
+            if game_row["scheduled_date"] < game_row["today"]:
+                raise HTTPException(
+                    status_code=409, detail="This game's date has already passed"
+                )
+
+            is_circle_member = await conn.fetchval(
+                "SELECT 1 FROM social.circle_members WHERE circle_id = $1 AND user_id = $2",
+                game_row["circle_id"],
+                payload.user_id,
+            )
+            if not is_circle_member:
+                raise HTTPException(
+                    status_code=422, detail="They must be a member of this circle first"
+                )
+
+            already_in = await conn.fetchval(
+                "SELECT 1 FROM social.game_participants WHERE game_id = $1 AND user_id = $2",
+                game_id,
+                payload.user_id,
+            )
+            if already_in:
+                raise HTTPException(status_code=409, detail="Already a participant of this game")
+
+            await conn.execute(
+                """
+                INSERT INTO social.game_participants (game_id, user_id, status)
+                VALUES ($1, $2, 'confirmed')
+                """,
+                game_id,
+                payload.user_id,
             )
 
     return await get_game(game_id, current_user_id)
