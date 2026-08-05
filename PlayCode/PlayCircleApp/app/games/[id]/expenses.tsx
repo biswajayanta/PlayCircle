@@ -302,7 +302,9 @@ export default function GameExpensesScreen() {
                         </View>
                         {split.is_settled ? (
                           <View style={styles.settledBadge}>
-                            <Text style={styles.settledBadgeText}>Paid</Text>
+                            <Text style={styles.settledBadgeText}>
+                              {Number(split.drawn_from_kitty) > 0 ? 'From kitty' : 'Paid'}
+                            </Text>
                           </View>
                         ) : canSettle ? (
                           <Pressable

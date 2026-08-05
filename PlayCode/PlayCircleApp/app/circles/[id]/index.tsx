@@ -15,6 +15,7 @@ import {
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
 import { Circle, Game, Venue } from '../../../lib/types';
+import Watermark from '../../../components/Watermark';
 
 // Plain CSS-in-JS for the raw <input type="datetime-local"> used on web —
 // this isn't a React Native style object, it's real DOM CSS properties.
@@ -88,7 +89,8 @@ export default function CircleDetailScreen() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
-  const [scheduledAtInput, setScheduledAtInput] = useState('');
+  const [dateInput, setDateInput] = useState('');
+  const [timeInput, setTimeInput] = useState('');
   const [creating, setCreating] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [showOlderGames, setShowOlderGames] = useState(false);
@@ -124,12 +126,13 @@ export default function CircleDetailScreen() {
 
   async function handleCreateGame() {
     if (!id || !selectedVenue) return;
-    const scheduledAt = new Date(scheduledAtInput);
+    if (!dateInput || !timeInput) {
+      showAlert('Missing date or time', 'Pick both a date and a time for the game.');
+      return;
+    }
+    const scheduledAt = new Date(`${dateInput}T${timeInput}`);
     if (Number.isNaN(scheduledAt.getTime())) {
-      showAlert(
-        'Invalid date',
-        'Enter the date and time like 2026-07-25 18:00'
-      );
+      showAlert('Invalid date', 'Pick a valid date and time.');
       return;
     }
     setCreating(true);
@@ -143,7 +146,8 @@ export default function CircleDetailScreen() {
       setGames((prev) => [...prev, created].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at)));
       setCreateOpen(false);
       setSelectedVenue(null);
-      setScheduledAtInput('');
+      setDateInput('');
+      setTimeInput('');
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to create game';
       showAlert('Could not create game', message);
@@ -214,6 +218,12 @@ export default function CircleDetailScreen() {
           onPress={() => router.push(`/circles/${id}/report`)}
         >
           <Text style={styles.reportButtonText}>📊 Report</Text>
+        </Pressable>
+        <Pressable
+          style={styles.reportButton}
+          onPress={() => router.push(`/circles/${id}/treasury`)}
+        >
+          <Text style={styles.reportButtonText}>💰 Treasury</Text>
         </Pressable>
       </View>
 
@@ -287,46 +297,89 @@ export default function CircleDetailScreen() {
             <Text style={styles.modalTitle}>New Game</Text>
 
             <Text style={styles.fieldLabel}>Venue</Text>
-            <FlatList
-              data={venues}
-              keyExtractor={(v) => String(v.id)}
-              style={styles.venueList}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={[
-                    styles.venueOption,
-                    selectedVenue?.id === item.id && styles.venueOptionSelected,
-                  ]}
-                  onPress={() => setSelectedVenue(item)}
-                >
-                  <Text
+            {Platform.OS === 'web' ? (
+              React.createElement(
+                'select',
+                {
+                  value: selectedVenue ? String(selectedVenue.id) : '',
+                  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => {
+                    const venue = venues.find((v) => String(v.id) === e.target.value) ?? null;
+                    setSelectedVenue(venue);
+                  },
+                  style: webDateInputStyle,
+                },
+                [
+                  React.createElement(
+                    'option',
+                    { key: '', value: '', disabled: true },
+                    'Choose a venue...'
+                  ),
+                  ...venues.map((v) =>
+                    React.createElement('option', { key: v.id, value: String(v.id) }, v.name)
+                  ),
+                ]
+              )
+            ) : (
+              <FlatList
+                data={venues}
+                keyExtractor={(v) => String(v.id)}
+                style={styles.venueList}
+                renderItem={({ item }) => (
+                  <Pressable
                     style={[
-                      styles.venueOptionText,
-                      selectedVenue?.id === item.id && styles.venueOptionTextSelected,
+                      styles.venueOption,
+                      selectedVenue?.id === item.id && styles.venueOptionSelected,
                     ]}
+                    onPress={() => setSelectedVenue(item)}
                   >
-                    {item.name}
-                  </Text>
-                </Pressable>
-              )}
-            />
+                    <Text
+                      style={[
+                        styles.venueOptionText,
+                        selectedVenue?.id === item.id && styles.venueOptionTextSelected,
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                  </Pressable>
+                )}
+              />
+            )}
 
-            <Text style={styles.fieldLabel}>Date &amp; time</Text>
+            <Text style={styles.fieldLabel}>Date</Text>
             {Platform.OS === 'web' ? (
               React.createElement('input', {
-                type: 'datetime-local',
-                value: scheduledAtInput,
+                type: 'date',
+                value: dateInput,
                 onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
-                  setScheduledAtInput(e.target.value),
+                  setDateInput(e.target.value),
                 style: webDateInputStyle,
               })
             ) : (
               <TextInput
                 placeholderTextColor="#9AA69E"
                 style={styles.input}
-                placeholder="2026-07-25 18:00"
-                value={scheduledAtInput}
-                onChangeText={setScheduledAtInput}
+                placeholder="2026-07-25"
+                value={dateInput}
+                onChangeText={setDateInput}
+              />
+            )}
+
+            <Text style={styles.fieldLabel}>Time</Text>
+            {Platform.OS === 'web' ? (
+              React.createElement('input', {
+                type: 'time',
+                value: timeInput,
+                onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+                  setTimeInput(e.target.value),
+                style: webDateInputStyle,
+              })
+            ) : (
+              <TextInput
+                placeholderTextColor="#9AA69E"
+                style={styles.input}
+                placeholder="18:00"
+                value={timeInput}
+                onChangeText={setTimeInput}
               />
             )}
 
@@ -340,10 +393,11 @@ export default function CircleDetailScreen() {
               <Pressable
                 style={[
                   styles.modalCreateButton,
-                  (!selectedVenue || creating) && styles.joinButtonDisabled,
+                  (!selectedVenue || !dateInput || !timeInput || creating) &&
+                    styles.joinButtonDisabled,
                 ]}
                 onPress={handleCreateGame}
-                disabled={!selectedVenue || creating}
+                disabled={!selectedVenue || !dateInput || !timeInput || creating}
               >
                 <Text style={styles.modalCreateButtonText}>
                   {creating ? 'Creating...' : 'Create'}
@@ -354,6 +408,7 @@ export default function CircleDetailScreen() {
         </View>
       </Modal>
 
+      <Watermark />
     </View>
   );
 }

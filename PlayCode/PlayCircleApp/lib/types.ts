@@ -106,6 +106,7 @@ export interface ExpenseSplit {
   share_amount: string;
   is_settled: boolean;
   settled_at: string | null;
+  drawn_from_kitty: string;
 }
 
 export interface Expense {
@@ -232,4 +233,38 @@ export interface LeaderboardEntry {
 export interface CircleLeaderboard {
   circle_id: string;
   entries: LeaderboardEntry[];
+}
+
+export interface Treasurer {
+  circle_id: string;
+  user_id: string;
+  display_name: string;
+  set_by_user_id: string;
+  created_at: string;
+}
+
+export interface AdvanceContribution {
+  id: string;
+  contributor_user_id: string;
+  contributor_display_name: string;
+  amount: string;
+  note: string | null;
+  recorded_by_user_id: string;
+  created_at: string;
+}
+
+export interface MemberKittyBalance {
+  user_id: string;
+  display_name: string;
+  total_contributed: string;
+  total_drawn: string;
+  balance: string;
+}
+
+export interface Treasury {
+  circle_id: string;
+  treasurer: Treasurer | null;
+  treasurer_pool_balance: string | null;
+  balances: MemberKittyBalance[];
+  contributions: AdvanceContribution[];
 }

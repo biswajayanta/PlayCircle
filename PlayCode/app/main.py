@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db import connect_db, disconnect_db
-from app.routers import auth, circles, expenses, games, health, matches, posts, reports, settlements, sports, users, venues
+from app.routers import auth, circles, expenses, games, health, matches, posts, reports, settlements, sports, treasury, users, venues
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
 
@@ -20,10 +20,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PlayCircle API", lifespan=lifespan)
 
-# Origins come from PLAYCIRCLE_CORS_ORIGINS (comma-separated), e.g. in Azure:
-#   PLAYCIRCLE_CORS_ORIGINS=https://playcircle.azurestaticapps.net
-# Local dev defaults to "*" only when nothing is set, so this stays safe by
-# default once a real value is configured in production.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -44,3 +40,4 @@ app.include_router(expenses.router)
 app.include_router(settlements.router)
 app.include_router(posts.router)
 app.include_router(reports.router)
+app.include_router(treasury.router)

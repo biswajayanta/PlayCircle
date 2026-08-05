@@ -15,6 +15,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -22,16 +38,79 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install dependencies
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install frontend dependencies
         working-directory: PlayCode/PlayCircleApp
         run: npm ci
 
+      # This is the step that caught the recent `game` possibly-null bug —
+      # it must run with the exact same tsconfig as the real project (not
+      # a standalone check), so it needs the full node_modules installed.
       - name: Type-check
         working-directory: PlayCode/PlayCircleApp
         run: npx tsc --noEmit
 
+      # The E2E suite drives the real UI against a real running backend —
+      # not mocked — so we boot one here exactly like local dev does.
+      - name: Set up a real backend for E2E to run against
+        working-directory: PlayCode
+        env:
+          PLAYCIRCLE_DB_HOST: 127.0.0.1
+          PLAYCIRCLE_PORT: 5432
+          PLAYCIRCLE_USER: postgres
+          PLAYCIRCLE_PASSWORD: ci-only-password
+          PLAYCIRCLE_NAME: playcircle_e2e
+        run: |
+          pip install -r requirements.txt
+          PGPASSWORD=ci-only-password psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE playcircle_e2e"
+          python -m alembic upgrade head
+          PGPASSWORD=ci-only-password psql -h 127.0.0.1 -U postgres -d playcircle_e2e -c "
+            INSERT INTO core.sports (name) VALUES ('pickleball');
+            INSERT INTO core.venues (sport_id, name, address, city)
+            VALUES (1, 'HSR Layout Pickleball Courts', '1 Test Street', 'Bengaluru');
+          "
+          nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/backend.log 2>&1 &
+          sleep 5
+          curl --fail http://127.0.0.1:8000/health
+
+      - name: Install Playwright's browser
+        working-directory: PlayCode/PlayCircleApp
+        run: npx playwright install --with-deps chromium
+
+      - name: Build web export and serve it
+        working-directory: PlayCode/PlayCircleApp
+        env:
+          EXPO_PUBLIC_API_URL: http://127.0.0.1:8000
+        run: |
+          npx expo export -p web
+          cd dist
+          nohup python3 -m http.server 8081 > /tmp/frontend.log 2>&1 &
+          sleep 5
+          curl --fail http://127.0.0.1:8081/
+
+      - name: Run E2E regression suite
+        working-directory: PlayCode/PlayCircleApp
+        env:
+          E2E_BASE_URL: http://127.0.0.1:8081
+        run: npx playwright test
+
+      - name: Show backend log if anything failed
+        if: failure()
+        run: cat /tmp/backend.log || true
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: PlayCode/PlayCircleApp/playwright-report/
+          retention-days: 7
+
   # Same pattern as the backend workflow — push to `dev` -> Azure Dev
-  # automatically. deploy-uat / deploy-prod get added here later.
+  # automatically, gated on the test job above passing first.
   deploy-dev:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
