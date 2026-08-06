@@ -27,17 +27,26 @@ test('settlement plan updates immediately after adding an expense, no navigation
 
   await page.getByText('+ New Game', { exact: true }).click();
   await page.waitForTimeout(500);
-  await page.getByText('HSR Layout Pickleball Courts', { exact: true }).first().click();
-  await page.locator('input[type="datetime-local"]').fill('2026-12-20T18:00');
+
+  // Venue is a real <select> dropdown now — use selectOption, not a click
+  // on the option text (which isn't independently visible/clickable while
+  // the native dropdown is closed).
+  await page.locator('select').selectOption({ label: 'HSR Layout Pickleball Courts' });
+  await page.locator('input[type="date"]').fill('2026-12-20');
+  await page.locator('input[type="time"]').fill('18:00');
   await page.getByText('Create', { exact: true }).last().click();
   await page.waitForTimeout(1200);
 
-  // Add a second real member to the circle first.
+  // Add a second real member — this now lives on the dedicated Members
+  // screen (behind the "N Members" button), not inline on the circle
+  // screen anymore.
   const email2 = testEmail('settle-second');
   const context2 = await browser.newContext();
   const page2 = await context2.newPage();
   await signUp(page2, 'Second Player', email2);
 
+  await page.getByText('👥', { exact: false }).click();
+  await page.waitForTimeout(800);
   await page.getByText('+ Add Member', { exact: true }).click();
   await page.waitForTimeout(400);
   await page.locator('input[placeholder="their@email.com"]').fill(email2);
@@ -77,7 +86,8 @@ test('settlement plan updates immediately after adding an expense, no navigation
   await page.waitForTimeout(1000);
 
   // The whole point of this test: no reload, no back-and-forth navigation —
-  // the settlement plan must reflect the new expense right here.
+  // the settlement plan must reflect the new expense right here. With two
+  // participants and only one payer, there's now genuine debt to show.
   await expect(page.getByText('settled up', { exact: false })).not.toBeVisible();
   await expect(page.getByText('owes', { exact: false })).toBeVisible();
 });
