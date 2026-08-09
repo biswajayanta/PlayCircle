@@ -7,12 +7,12 @@ set -e
 az postgres flexible-server db create \
   --resource-group playcircle-rg \
   --server-name playcircle-db-jaybee \
-  --database-name playcircle_uat
+  --name playcircle_uat
 
 az postgres flexible-server db create \
   --resource-group playcircle-rg \
   --server-name playcircle-db-jaybee \
-  --database-name playcircle_prod
+  --name playcircle_prod
 
 # ============================================================
 # STEP 2 — UAT backend: Free tier App Service Plan + Web App
