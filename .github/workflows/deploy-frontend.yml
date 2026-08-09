@@ -46,15 +46,10 @@ jobs:
         working-directory: PlayCode/PlayCircleApp
         run: npm ci
 
-      # This is the step that caught the recent `game` possibly-null bug —
-      # it must run with the exact same tsconfig as the real project (not
-      # a standalone check), so it needs the full node_modules installed.
       - name: Type-check
         working-directory: PlayCode/PlayCircleApp
         run: npx tsc --noEmit
 
-      # The E2E suite drives the real UI against a real running backend —
-      # not mocked — so we boot one here exactly like local dev does.
       - name: Set up a real backend for E2E to run against
         working-directory: PlayCode
         env:
@@ -109,8 +104,6 @@ jobs:
           path: PlayCode/PlayCircleApp/playwright-report/
           retention-days: 7
 
-  # Same pattern as the backend workflow — push to `dev` -> Azure Dev
-  # automatically, gated on the test job above passing first.
   deploy-dev:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
@@ -118,22 +111,74 @@ jobs:
     environment: dev
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-
       - name: Install dependencies
         working-directory: PlayCode/PlayCircleApp
         run: npm ci
-
       - name: Build web export
         working-directory: PlayCode/PlayCircleApp
         env:
           EXPO_PUBLIC_API_URL: ${{ vars.PLAYCIRCLE_API_URL }}
         run: npx expo export -p web
-
       - name: Deploy to Azure Static Web Apps (Dev)
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: PlayCode/PlayCircleApp/dist
+          skip_app_build: true
+
+  deploy-uat:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        working-directory: PlayCode/PlayCircleApp
+        run: npm ci
+      - name: Build web export
+        working-directory: PlayCode/PlayCircleApp
+        env:
+          EXPO_PUBLIC_API_URL: ${{ vars.PLAYCIRCLE_API_URL }}
+        run: npx expo export -p web
+      - name: Deploy to Azure Static Web Apps (UAT)
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: PlayCode/PlayCircleApp/dist
+          skip_app_build: true
+
+  # Same build as UAT, held behind a manual approval (GitHub Environment
+  # protection rule on "production", configured in the repo UI).
+  deploy-prod:
+    needs: deploy-uat
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        working-directory: PlayCode/PlayCircleApp
+        run: npm ci
+      - name: Build web export
+        working-directory: PlayCode/PlayCircleApp
+        env:
+          EXPO_PUBLIC_API_URL: ${{ vars.PLAYCIRCLE_API_URL }}
+        run: npx expo export -p web
+      - name: Deploy to Azure Static Web Apps (Prod)
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}

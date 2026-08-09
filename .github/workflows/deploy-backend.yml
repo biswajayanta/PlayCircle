@@ -38,9 +38,6 @@ jobs:
       PLAYCIRCLE_PORT: 5432
       PLAYCIRCLE_USER: postgres
       PLAYCIRCLE_PASSWORD: ci-only-password
-      # PLAYCIRCLE_NAME is deliberately not set here — conftest.py always
-      # targets a fixed, obviously-a-test database name, as a safety net
-      # against ever pointing the suite at something real.
 
     steps:
       - uses: actions/checkout@v4
@@ -65,6 +62,7 @@ jobs:
         working-directory: PlayCode
         run: python -m pytest tests/ -v
 
+  # Push to dev -> Dev environment automatically, same as always.
   deploy-dev:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
@@ -72,8 +70,41 @@ jobs:
     environment: dev
     steps:
       - uses: actions/checkout@v4
-
       - name: Deploy to Azure App Service (Dev)
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: PlayCode
+
+  # Push to main -> UAT automatically. No approval needed — UAT is meant
+  # to be freely poked at by testers, not gated.
+  deploy-uat:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Azure App Service (UAT)
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: PlayCode
+
+  # Same build that just went to UAT, deployed to Prod — but only after a
+  # human approves it. This is a GitHub Environment protection rule
+  # (Settings -> Environments -> production -> required reviewers),
+  # configured in the repo UI, not in this file.
+  deploy-prod:
+    needs: deploy-uat
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Azure App Service (Prod)
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
