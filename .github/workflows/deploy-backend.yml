@@ -2,13 +2,13 @@ name: Deploy Backend
 
 on:
   push:
-    branches: [main]
+    branches: [dev, main]
     paths:
       - "PlayCode/**"
       - "!PlayCode/PlayCircleApp/**"
       - ".github/workflows/deploy-backend.yml"
   pull_request:
-    branches: [main]
+    branches: [dev, main]
     paths:
       - "PlayCode/**"
       - "!PlayCode/PlayCircleApp/**"
@@ -17,6 +17,28 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PLAYCIRCLE_DB_HOST: 127.0.0.1
+      PLAYCIRCLE_PORT: 5432
+      PLAYCIRCLE_USER: postgres
+      PLAYCIRCLE_PASSWORD: ci-only-password
+
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +48,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: PlayCode
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-test.txt
 
       - name: Smoke test — app imports cleanly
         working-directory: PlayCode
@@ -36,19 +58,53 @@ jobs:
         working-directory: PlayCode
         run: python -m py_compile $(find app -name "*.py")
 
-      # There's no automated test suite yet — add pytest here once one exists.
-      # This job intentionally fails the build on any import/syntax error so
-      # a broken PR can't be merged and a broken deploy never reaches Azure.
+      - name: Run regression suite
+        working-directory: PlayCode
+        run: python -m pytest tests/ -v
 
-  deploy:
+  # Push to dev -> Dev environment automatically, same as always.
+  deploy-dev:
     needs: test
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Azure App Service (Dev)
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: PlayCode
+
+  # Push to main -> UAT automatically. No approval needed — UAT is meant
+  # to be freely poked at by testers, not gated.
+  deploy-uat:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Azure App Service (UAT)
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: PlayCode
+
+  # Same build that just went to UAT, deployed to Prod — but only after a
+  # human approves it. This is a GitHub Environment protection rule
+  # (Settings -> Environments -> production -> required reviewers),
+  # configured in the repo UI, not in this file.
+  deploy-prod:
+    needs: deploy-uat
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v4
-
-      - name: Deploy to Azure App Service
+      - name: Deploy to Azure App Service (Prod)
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}

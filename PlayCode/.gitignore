@@ -1,0 +1,44 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+.vscode/settings.json
+.idea/
+dist/
+build/
+.best/
+
+# Python
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+dist/
+build/
+
+# Expo / React Native
+**/node_modules/
+PlayCircleApp/.expo/
+PlayCircleApp/web-build/
+PlayCircleApp/dist/
+
+# macOS
+.DS_Store
+
+# React Native / Expo
+**/node_modules/
+**/.expo/
+**/web-build/
+**/dist/
+
+# Python
+**/__pycache__/
+*.py[cod]
