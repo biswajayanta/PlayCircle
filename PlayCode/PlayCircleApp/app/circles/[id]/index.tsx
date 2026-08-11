@@ -1,4 +1,5 @@
 import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,7 +16,6 @@ import {
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
 import { Circle, Game, Venue } from '../../../lib/types';
-import Watermark from '../../../components/Watermark';
 
 // Plain CSS-in-JS for the raw <input type="datetime-local"> used on web —
 // this isn't a React Native style object, it's real DOM CSS properties.
@@ -38,6 +38,21 @@ const STATUS_COLORS: Record<Game['status'], { bg: string; text: string }> = {
   completed: { bg: '#EDEDED', text: '#5F5F5F' },
   cancelled: { bg: '#EDEDED', text: '#5F5F5F' },
 };
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+// Format a Date's LOCAL date/time as 'YYYY-MM-DD' / 'HH:mm'. Deliberately not
+// toISOString() — that converts to UTC first, which silently shifts the date
+// or time whenever local time isn't UTC (i.e. basically always in IST).
+function formatDateInput(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function formatTimeInput(d: Date): string {
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
 
 function formatScheduledAt(iso: string): string {
   const date = new Date(iso);
@@ -91,6 +106,8 @@ export default function CircleDetailScreen() {
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
   const [dateInput, setDateInput] = useState('');
   const [timeInput, setTimeInput] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [creating, setCreating] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [showOlderGames, setShowOlderGames] = useState(false);
@@ -123,6 +140,18 @@ export default function CircleDetailScreen() {
       load();
     }, [load])
   );
+
+  // Android dismisses the picker itself and reports event.type; iOS keeps it
+  // open inline, so we only close it here on Android after a real selection.
+  function onNativeDateChange(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS === 'android') setShowDatePicker(false);
+    if (event.type === 'set' && selected) setDateInput(formatDateInput(selected));
+  }
+
+  function onNativeTimeChange(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS === 'android') setShowTimePicker(false);
+    if (event.type === 'set' && selected) setTimeInput(formatTimeInput(selected));
+  }
 
   async function handleCreateGame() {
     if (!id || !selectedVenue) return;
@@ -355,13 +384,21 @@ export default function CircleDetailScreen() {
                 style: webDateInputStyle,
               })
             ) : (
-              <TextInput
-                placeholderTextColor="#9AA69E"
-                style={styles.input}
-                placeholder="2026-07-25"
-                value={dateInput}
-                onChangeText={setDateInput}
-              />
+              <>
+                <Pressable style={styles.input} onPress={() => setShowDatePicker(true)}>
+                  <Text style={dateInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
+                    {dateInput || 'Choose a date'}
+                  </Text>
+                </Pressable>
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={dateInput ? new Date(`${dateInput}T00:00:00`) : new Date()}
+                    mode="date"
+                    display="default"
+                    onChange={onNativeDateChange}
+                  />
+                )}
+              </>
             )}
 
             <Text style={styles.fieldLabel}>Time</Text>
@@ -374,13 +411,21 @@ export default function CircleDetailScreen() {
                 style: webDateInputStyle,
               })
             ) : (
-              <TextInput
-                placeholderTextColor="#9AA69E"
-                style={styles.input}
-                placeholder="18:00"
-                value={timeInput}
-                onChangeText={setTimeInput}
-              />
+              <>
+                <Pressable style={styles.input} onPress={() => setShowTimePicker(true)}>
+                  <Text style={timeInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
+                    {timeInput || 'Choose a time'}
+                  </Text>
+                </Pressable>
+                {showTimePicker && (
+                  <DateTimePicker
+                    value={timeInput ? new Date(`2000-01-01T${timeInput}:00`) : new Date()}
+                    mode="time"
+                    display="default"
+                    onChange={onNativeTimeChange}
+                  />
+                )}
+              </>
             )}
 
             <View style={styles.modalActions}>
@@ -407,8 +452,6 @@ export default function CircleDetailScreen() {
           </View>
         </View>
       </Modal>
-
-      <Watermark />
     </View>
   );
 }
@@ -769,6 +812,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 15,
+    justifyContent: 'center',
+  },
+  pickerValueText: {
+    fontSize: 15,
+    color: '#173A2E',
+  },
+  pickerPlaceholderText: {
+    fontSize: 15,
+    color: '#9AA69E',
   },
   modalActions: {
     flexDirection: 'row',

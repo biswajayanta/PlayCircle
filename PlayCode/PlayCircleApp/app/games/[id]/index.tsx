@@ -1,4 +1,5 @@
 import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -30,6 +31,21 @@ const webDateInputStyle: React.CSSProperties = {
   color: '#173A2E',
   fontFamily: 'inherit',
 };
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+// Format a Date's LOCAL date/time as 'YYYY-MM-DD' / 'HH:mm'. Deliberately not
+// toISOString() — that converts to UTC first, which silently shifts the date
+// or time whenever local time isn't UTC (i.e. basically always in IST).
+function formatDateInput(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function formatTimeInput(d: Date): string {
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
 
 function formatScheduledAt(iso: string): string {
   const date = new Date(iso);
@@ -64,7 +80,10 @@ export default function GameDetailScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
-  const [rescheduleInput, setRescheduleInput] = useState('');
+  const [rescheduleDateInput, setRescheduleDateInput] = useState('');
+  const [rescheduleTimeInput, setRescheduleTimeInput] = useState('');
+  const [showReschedDatePicker, setShowReschedDatePicker] = useState(false);
+  const [showReschedTimePicker, setShowReschedTimePicker] = useState(false);
   const [rescheduling, setRescheduling] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -110,9 +129,21 @@ export default function GameDetailScreen() {
     }, [load])
   );
 
+  // Android dismisses the picker itself and reports event.type; iOS keeps it
+  // open inline, so we only close it here on Android after a real selection.
+  function onReschedDateChange(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS === 'android') setShowReschedDatePicker(false);
+    if (event.type === 'set' && selected) setRescheduleDateInput(formatDateInput(selected));
+  }
+
+  function onReschedTimeChange(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS === 'android') setShowReschedTimePicker(false);
+    if (event.type === 'set' && selected) setRescheduleTimeInput(formatTimeInput(selected));
+  }
+
   async function handleReschedule() {
-    if (!id || !rescheduleInput) return;
-    const newDate = new Date(rescheduleInput);
+    if (!id || !rescheduleDateInput || !rescheduleTimeInput) return;
+    const newDate = new Date(`${rescheduleDateInput}T${rescheduleTimeInput}`);
     if (Number.isNaN(newDate.getTime())) {
       showAlert('Invalid date', 'Please pick a valid date and time.');
       return;
@@ -124,7 +155,8 @@ export default function GameDetailScreen() {
       });
       setGame(updated);
       setRescheduleOpen(false);
-      setRescheduleInput('');
+      setRescheduleDateInput('');
+      setRescheduleTimeInput('');
       showAlert('Rescheduled', 'The game has been moved to the new time.');
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to reschedule';
@@ -296,7 +328,9 @@ export default function GameDetailScreen() {
                     <Pressable
                       style={styles.expensesLink}
                       onPress={() => {
-                        setRescheduleInput(game.scheduled_at.slice(0, 16));
+                        const current = new Date(game.scheduled_at);
+                        setRescheduleDateInput(formatDateInput(current));
+                        setRescheduleTimeInput(formatTimeInput(current));
                         setRescheduleOpen(true);
                       }}
                     >
@@ -430,23 +464,60 @@ export default function GameDetailScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Reschedule game</Text>
+            <Text style={styles.fieldLabel}>Date</Text>
             {Platform.OS === 'web' ? (
               React.createElement('input', {
-                type: 'datetime-local',
-                value: rescheduleInput,
+                type: 'date',
+                value: rescheduleDateInput,
                 onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
-                  setRescheduleInput(e.target.value),
+                  setRescheduleDateInput(e.target.value),
                 style: webDateInputStyle,
               })
             ) : (
-              <TextInput
-                placeholderTextColor="#9AA69E"
-                style={styles.input}
-                placeholder="2026-07-25 18:00"
-                value={rescheduleInput}
-                onChangeText={setRescheduleInput}
-              />
+              <>
+                <Pressable style={styles.input} onPress={() => setShowReschedDatePicker(true)}>
+                  <Text style={rescheduleDateInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
+                    {rescheduleDateInput || 'Choose a date'}
+                  </Text>
+                </Pressable>
+                {showReschedDatePicker && (
+                  <DateTimePicker
+                    value={rescheduleDateInput ? new Date(`${rescheduleDateInput}T00:00:00`) : new Date()}
+                    mode="date"
+                    display="default"
+                    onChange={onReschedDateChange}
+                  />
+                )}
+              </>
             )}
+
+            <Text style={styles.fieldLabel}>Time</Text>
+            {Platform.OS === 'web' ? (
+              React.createElement('input', {
+                type: 'time',
+                value: rescheduleTimeInput,
+                onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+                  setRescheduleTimeInput(e.target.value),
+                style: webDateInputStyle,
+              })
+            ) : (
+              <>
+                <Pressable style={styles.input} onPress={() => setShowReschedTimePicker(true)}>
+                  <Text style={rescheduleTimeInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
+                    {rescheduleTimeInput || 'Choose a time'}
+                  </Text>
+                </Pressable>
+                {showReschedTimePicker && (
+                  <DateTimePicker
+                    value={rescheduleTimeInput ? new Date(`2000-01-01T${rescheduleTimeInput}:00`) : new Date()}
+                    mode="time"
+                    display="default"
+                    onChange={onReschedTimeChange}
+                  />
+                )}
+              </>
+            )}
+
             <View style={styles.modalActions}>
               <Pressable
                 style={styles.modalCancelButton}
@@ -457,10 +528,10 @@ export default function GameDetailScreen() {
               <Pressable
                 style={[
                   styles.modalConfirmButton,
-                  (!rescheduleInput || rescheduling) && styles.disabledButton,
+                  (!rescheduleDateInput || !rescheduleTimeInput || rescheduling) && styles.disabledButton,
                 ]}
                 onPress={handleReschedule}
-                disabled={!rescheduleInput || rescheduling}
+                disabled={!rescheduleDateInput || !rescheduleTimeInput || rescheduling}
               >
                 <Text style={styles.modalConfirmButtonText}>
                   {rescheduling ? 'Saving...' : 'Save new time'}
@@ -686,6 +757,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     backgroundColor: '#fff',
     marginBottom: 12,
+    justifyContent: 'center',
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7A73',
+    marginBottom: 6,
+  },
+  pickerValueText: {
+    fontSize: 15,
+    color: '#173A2E',
+  },
+  pickerPlaceholderText: {
+    fontSize: 15,
+    color: '#9AA69E',
   },
   noMatchesText: {
     fontSize: 13,
