@@ -4,7 +4,7 @@
     "slug": "PlayCircleApp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/images/logo-icon.png",
     "scheme": "playcircle",
     "userInterfaceStyle": "light",
     "plugins": [
@@ -17,15 +17,20 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/logo-icon.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.biswasj.PlayCircleApp"
     },
     "web": {
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/images/logo-icon.png",
       "bundler": "metro"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "029fd233-71b1-4bf2-9642-623f78011cd7"
+      }
     }
   }
 }
