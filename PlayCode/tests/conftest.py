@@ -81,9 +81,17 @@ def _build_test_database():
     async def _seed():
         conn = await asyncpg.connect(**admin_dsn_parts, database=TEST_DB_NAME)
         try:
+            # The migration chain itself now creates the pickleball row
+            # (with code/indoor_outdoor/etc. filled in) — look it up rather
+            # than inserting a second, incomplete one.
             sport_id = await conn.fetchval(
-                "INSERT INTO core.sports (name) VALUES ('pickleball') RETURNING id"
+                "SELECT id FROM core.sports WHERE lower(name) = 'pickleball'"
             )
+            if sport_id is None:
+                raise RuntimeError(
+                    "No pickleball row found after migrations ran — "
+                    "expected the migration chain to have created one."
+                )
             await conn.execute(
                 """
                 INSERT INTO core.venues (sport_id, name, address, city)
