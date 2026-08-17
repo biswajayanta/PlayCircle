@@ -13,6 +13,21 @@ function teamNames(match: MatchDetail, team: number): string {
     .join(' & ');
 }
 
+// Cosmetic only — the backend's scoring engine is the actual source of
+// truth for rules. This just gives each sport a friendly one-line
+// description under the scoreboard. Anything not listed here still works
+// fine; it just falls back to showing the sport name alone.
+const SPORT_RULES_BLURB: Record<string, string> = {
+  pickleball: 'rally scoring to 11, win by 2',
+  carrom: 'race to 25 points',
+};
+
+function formatRulesNote(sportName: string): string {
+  const blurb = SPORT_RULES_BLURB[sportName.trim().toLowerCase()];
+  const label = sportName.charAt(0).toUpperCase() + sportName.slice(1);
+  return blurb ? `${label} · ${blurb}` : label;
+}
+
 export default function MatchScoreScreen() {
   const { matchId } = useLocalSearchParams<{ matchId: string }>();
 
@@ -151,7 +166,7 @@ export default function MatchScoreScreen() {
         <Text style={styles.undoButtonText}>Undo last point</Text>
       </Pressable>
 
-      <Text style={styles.rulesNote}>Pickleball · rally scoring to 11, win by 2</Text>
+      <Text style={styles.rulesNote}>{formatRulesNote(match.sport_name)}</Text>
     </View>
   );
 }

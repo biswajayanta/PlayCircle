@@ -1,9 +1,11 @@
 from app.scoring.base import ScoringEngine
+from app.scoring.carrom import CarromEngine
 from app.scoring.pickleball import PickleballEngine
 
 # Add a new sport by writing an engine module and registering it here.
 _ENGINES: dict[str, ScoringEngine] = {
     "pickleball": PickleballEngine(),
+    "carrom": CarromEngine(),
 }
 
 
