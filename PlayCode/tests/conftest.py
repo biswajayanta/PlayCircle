@@ -39,6 +39,10 @@ os.environ["PLAYCIRCLE_PASSWORD"] = os.environ.get("PLAYCIRCLE_PASSWORD", "Maddy
 os.environ["PLAYCIRCLE_NAME"] = TEST_DB_NAME
 os.environ["PLAYCIRCLE_JWT_SECRET_KEY"] = "test-only-secret-not-for-real-use"
 
+# Set by _build_test_database's _seed() step below, read by the a_venue
+# fixture further down. Module-level so it survives outside that closure.
+PICKLEBALL_SPORT_ID = None
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _build_test_database():
@@ -92,6 +96,8 @@ def _build_test_database():
                     "No pickleball row found after migrations ran — "
                     "expected the migration chain to have created one."
                 )
+            global PICKLEBALL_SPORT_ID
+            PICKLEBALL_SPORT_ID = sport_id
             await conn.execute(
                 """
                 INSERT INTO core.venues (sport_id, name, address, city)
@@ -182,14 +188,17 @@ async def circle_owner(client, unique):
 
 @pytest_asyncio.fixture
 async def a_venue(client, circle_owner):
-    """The first available venue — seed data (pickleball sport + venues)
-    must already exist in the test DB. If this fixture fails, the DB
-    wasn't seeded — see seed_test_data() below."""
+    """The Pickleball test venue specifically — not just 'the first venue',
+    since other sports (e.g. Carrom) are now also seeded via the migration
+    chain itself and may land with a lower id depending on seed order.
+    Filtering by the known pickleball sport_id keeps this fixture correct
+    regardless of how many other sports/venues exist."""
     resp = await client.get("/venues", headers=auth_headers(circle_owner["token"]))
     assert resp.status_code == 200, resp.text
     venues = resp.json()
-    assert len(venues) > 0, (
-        "No venues found — the test database needs seed data. "
+    pickleball_venues = [v for v in venues if v["sport_id"] == PICKLEBALL_SPORT_ID]
+    assert len(pickleball_venues) > 0, (
+        "No pickleball venue found — the test database needs seed data. "
         "Run the seed step before the test suite."
     )
-    return venues[0]
+    return pickleball_venues[0]
