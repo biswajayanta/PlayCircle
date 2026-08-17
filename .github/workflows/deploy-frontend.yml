@@ -63,7 +63,6 @@ jobs:
           PGPASSWORD=ci-only-password psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE playcircle_e2e"
           python -m alembic upgrade head
           PGPASSWORD=ci-only-password psql -h 127.0.0.1 -U postgres -d playcircle_e2e -c "
-            INSERT INTO core.sports (name) VALUES ('pickleball');
             INSERT INTO core.venues (sport_id, name, address, city)
             VALUES (1, 'HSR Layout Pickleball Courts', '1 Test Street', 'Bengaluru');
           "
