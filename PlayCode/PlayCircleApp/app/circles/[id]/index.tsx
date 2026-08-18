@@ -7,6 +7,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,7 +16,7 @@ import {
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
-import { Circle, Game, Venue } from '../../../lib/types';
+import { Circle, Game, Sport, Venue } from '../../../lib/types';
 
 // Plain CSS-in-JS for the raw <input type="datetime-local"> used on web —
 // this isn't a React Native style object, it's real DOM CSS properties.
@@ -38,6 +39,15 @@ const STATUS_COLORS: Record<Game['status'], { bg: string; text: string }> = {
   completed: { bg: '#EDEDED', text: '#5F5F5F' },
   cancelled: { bg: '#EDEDED', text: '#5F5F5F' },
 };
+
+// Cosmetic only — reads scoring_config directly so this works automatically
+// for any future sport with recognizable keys, no per-sport map to maintain.
+function formatSportBlurb(sport: Sport): string | null {
+  const cfg = sport.scoring_config as { win_score?: number; win_by?: number };
+  if (cfg.win_score && cfg.win_by) return `Rally to ${cfg.win_score}, win by ${cfg.win_by}`;
+  if (cfg.win_score) return `Race to ${cfg.win_score}`;
+  return null;
+}
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : String(n);
@@ -99,10 +109,13 @@ export default function CircleDetailScreen() {
   const [circle, setCircle] = useState<Circle | null>(null);
   const [games, setGames] = useState<Game[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
+  const [sports, setSports] = useState<Sport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [pickerTab, setPickerTab] = useState<'sport' | 'venue'>('sport');
+  const [selectedSport, setSelectedSport] = useState<Sport | null>(null);
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
   const [dateInput, setDateInput] = useState('');
   const [timeInput, setTimeInput] = useState('');
@@ -116,14 +129,16 @@ export default function CircleDetailScreen() {
     if (!id) return;
     setError(null);
     try {
-      const [circleResult, gamesResult, venuesResult] = await Promise.all([
+      const [circleResult, gamesResult, venuesResult, sportsResult] = await Promise.all([
         api.get<Circle>(`/circles/${id}`),
         api.get<Game[]>(`/games?circle_id=${id}`),
         api.get<Venue[]>('/venues'),
+        api.get<Sport[]>('/sports'),
       ]);
       setCircle(circleResult);
       setGames(gamesResult);
       setVenues(venuesResult);
+      setSports(sportsResult);
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -154,7 +169,7 @@ export default function CircleDetailScreen() {
   }
 
   async function handleCreateGame() {
-    if (!id || !selectedVenue) return;
+    if (!id || !selectedSport || !selectedVenue) return;
     if (!dateInput || !timeInput) {
       showAlert('Missing date or time', 'Pick both a date and a time for the game.');
       return;
@@ -168,13 +183,15 @@ export default function CircleDetailScreen() {
     try {
       const created = await api.post<Game>('/games', {
         circle_id: id,
-        sport_id: selectedVenue.sport_id,
+        sport_id: selectedSport.id,
         venue_id: selectedVenue.id,
         scheduled_at: scheduledAt.toISOString(),
       });
       setGames((prev) => [...prev, created].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at)));
       setCreateOpen(false);
+      setSelectedSport(null);
       setSelectedVenue(null);
+      setPickerTab('sport');
       setDateInput('');
       setTimeInput('');
     } catch (err) {
@@ -239,7 +256,15 @@ export default function CircleDetailScreen() {
       )}
 
       <View style={styles.actionRow}>
-        <Pressable style={styles.newGameButton} onPress={() => setCreateOpen(true)}>
+        <Pressable
+          style={styles.newGameButton}
+          onPress={() => {
+            setSelectedSport(null);
+            setSelectedVenue(null);
+            setPickerTab('sport');
+            setCreateOpen(true);
+          }}
+        >
           <Text style={styles.newGameButtonText}>+ New Game</Text>
         </Pressable>
         <Pressable
@@ -325,108 +350,188 @@ export default function CircleDetailScreen() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>New Game</Text>
 
-            <Text style={styles.fieldLabel}>Venue</Text>
-            {Platform.OS === 'web' ? (
-              React.createElement(
-                'select',
-                {
-                  value: selectedVenue ? String(selectedVenue.id) : '',
-                  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => {
-                    const venue = venues.find((v) => String(v.id) === e.target.value) ?? null;
-                    setSelectedVenue(venue);
-                  },
-                  style: webDateInputStyle,
-                },
-                [
-                  React.createElement(
-                    'option',
-                    { key: '', value: '', disabled: true },
-                    'Choose a venue...'
-                  ),
-                  ...venues.map((v) =>
-                    React.createElement('option', { key: v.id, value: String(v.id) }, v.name)
-                  ),
-                ]
-              )
-            ) : (
-              <FlatList
-                data={venues}
-                keyExtractor={(v) => String(v.id)}
-                style={styles.venueList}
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={[
-                      styles.venueOption,
-                      selectedVenue?.id === item.id && styles.venueOptionSelected,
-                    ]}
-                    onPress={() => setSelectedVenue(item)}
-                  >
-                    <Text
-                      style={[
-                        styles.venueOptionText,
-                        selectedVenue?.id === item.id && styles.venueOptionTextSelected,
-                      ]}
+            <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={styles.tabRow}>
+              <Pressable
+                style={[styles.tabButton, pickerTab === 'sport' && styles.tabButtonActive]}
+                onPress={() => setPickerTab('sport')}
+              >
+                <Text style={[styles.tabButtonText, pickerTab === 'sport' && styles.tabButtonTextActive]}>
+                  Sport
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.tabButton, pickerTab === 'venue' && styles.tabButtonActive]}
+                onPress={() => setPickerTab('venue')}
+              >
+                <Text style={[styles.tabButtonText, pickerTab === 'venue' && styles.tabButtonTextActive]}>
+                  Venue
+                </Text>
+              </Pressable>
+            </View>
+
+            {pickerTab === 'sport' ? (
+              <>
+                <Text style={styles.fieldLabel}>Choose a sport</Text>
+                <View style={styles.cardGrid}>
+                  {sports.map((sport) => (
+                    <Pressable
+                      key={sport.id}
+                      style={[styles.pickCard, selectedSport?.id === sport.id && styles.pickCardSelected]}
+                      onPress={() => {
+                        setSelectedSport(sport);
+                        // Clear the venue if it doesn't actually host this sport.
+                        if (selectedVenue && !selectedVenue.sport_ids.includes(sport.id)) {
+                          setSelectedVenue(null);
+                        }
+                      }}
                     >
-                      {item.name}
-                    </Text>
-                  </Pressable>
-                )}
-              />
-            )}
+                      <Text style={styles.pickCardTitle}>{sport.name}</Text>
+                      <Text style={styles.pickCardMeta}>
+                        {sport.indoor_outdoor} · {sport.min_players}-{sport.max_players} players
+                      </Text>
+                      {formatSportBlurb(sport) && (
+                        <Text style={styles.pickCardBlurb}>{formatSportBlurb(sport)}</Text>
+                      )}
+                    </Pressable>
+                  ))}
+                </View>
 
-            <Text style={styles.fieldLabel}>Date</Text>
-            {Platform.OS === 'web' ? (
-              React.createElement('input', {
-                type: 'date',
-                value: dateInput,
-                onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
-                  setDateInput(e.target.value),
-                style: webDateInputStyle,
-              })
+                {selectedSport && (
+                  <>
+                    <Text style={styles.fieldLabel}>Venue</Text>
+                    <View style={styles.cardGrid}>
+                      {venues
+                        .filter((v) => v.sport_ids.includes(selectedSport.id))
+                        .map((venue) => (
+                          <Pressable
+                            key={venue.id}
+                            style={[styles.pickCard, selectedVenue?.id === venue.id && styles.pickCardSelected]}
+                            onPress={() => setSelectedVenue(venue)}
+                          >
+                            <Text style={styles.pickCardTitle}>{venue.name}</Text>
+                            {venue.address && <Text style={styles.pickCardMeta}>{venue.address}</Text>}
+                          </Pressable>
+                        ))}
+                      {venues.filter((v) => v.sport_ids.includes(selectedSport.id)).length === 0 && (
+                        <Text style={styles.emptyStateText}>
+                          No venues host {selectedSport.name} yet.
+                        </Text>
+                      )}
+                    </View>
+                  </>
+                )}
+              </>
             ) : (
               <>
-                <Pressable style={styles.input} onPress={() => setShowDatePicker(true)}>
-                  <Text style={dateInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
-                    {dateInput || 'Choose a date'}
-                  </Text>
-                </Pressable>
-                {showDatePicker && (
-                  <DateTimePicker
-                    value={dateInput ? new Date(`${dateInput}T00:00:00`) : new Date()}
-                    mode="date"
-                    display="default"
-                    onChange={onNativeDateChange}
-                  />
+                <Text style={styles.fieldLabel}>Choose a venue</Text>
+                <View style={styles.cardGrid}>
+                  {venues.map((venue) => (
+                    <Pressable
+                      key={venue.id}
+                      style={[styles.pickCard, selectedVenue?.id === venue.id && styles.pickCardSelected]}
+                      onPress={() => {
+                        setSelectedVenue(venue);
+                        // Clear the sport if this venue doesn't actually host it.
+                        if (selectedSport && !venue.sport_ids.includes(selectedSport.id)) {
+                          setSelectedSport(null);
+                        }
+                      }}
+                    >
+                      <Text style={styles.pickCardTitle}>{venue.name}</Text>
+                      {venue.address && <Text style={styles.pickCardMeta}>{venue.address}</Text>}
+                      <Text style={styles.pickCardBlurb}>
+                        {sports
+                          .filter((s) => venue.sport_ids.includes(s.id))
+                          .map((s) => s.name)
+                          .join(' · ')}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                {selectedVenue && (
+                  <>
+                    <Text style={styles.fieldLabel}>Sport</Text>
+                    <View style={styles.cardGrid}>
+                      {sports
+                        .filter((s) => selectedVenue.sport_ids.includes(s.id))
+                        .map((sport) => (
+                          <Pressable
+                            key={sport.id}
+                            style={[styles.pickCard, selectedSport?.id === sport.id && styles.pickCardSelected]}
+                            onPress={() => setSelectedSport(sport)}
+                          >
+                            <Text style={styles.pickCardTitle}>{sport.name}</Text>
+                            {formatSportBlurb(sport) && (
+                              <Text style={styles.pickCardBlurb}>{formatSportBlurb(sport)}</Text>
+                            )}
+                          </Pressable>
+                        ))}
+                    </View>
+                  </>
                 )}
               </>
             )}
 
-            <Text style={styles.fieldLabel}>Time</Text>
-            {Platform.OS === 'web' ? (
-              React.createElement('input', {
-                type: 'time',
-                value: timeInput,
-                onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
-                  setTimeInput(e.target.value),
-                style: webDateInputStyle,
-              })
-            ) : (
+            {selectedSport && selectedVenue && (
               <>
-                <Pressable style={styles.input} onPress={() => setShowTimePicker(true)}>
-                  <Text style={timeInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
-                    {timeInput || 'Choose a time'}
-                  </Text>
-                </Pressable>
-                {showTimePicker && (
-                  <DateTimePicker
-                    value={timeInput ? new Date(`2000-01-01T${timeInput}:00`) : new Date()}
-                    mode="time"
-                    display="default"
-                    onChange={onNativeTimeChange}
-                  />
+                <Text style={styles.fieldLabel}>Date</Text>
+                {Platform.OS === 'web' ? (
+                  React.createElement('input', {
+                    type: 'date',
+                    value: dateInput,
+                    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+                      setDateInput(e.target.value),
+                    style: webDateInputStyle,
+                  })
+                ) : (
+                  <>
+                    <Pressable style={styles.input} onPress={() => setShowDatePicker(true)}>
+                      <Text style={dateInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
+                        {dateInput || 'Choose a date'}
+                      </Text>
+                    </Pressable>
+                    {showDatePicker && (
+                      <DateTimePicker
+                        value={dateInput ? new Date(`${dateInput}T00:00:00`) : new Date()}
+                        mode="date"
+                        display="default"
+                        onChange={onNativeDateChange}
+                      />
+                    )}
+                  </>
+                )}
+
+                <Text style={styles.fieldLabel}>Time</Text>
+                {Platform.OS === 'web' ? (
+                  React.createElement('input', {
+                    type: 'time',
+                    value: timeInput,
+                    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+                      setTimeInput(e.target.value),
+                    style: webDateInputStyle,
+                  })
+                ) : (
+                  <>
+                    <Pressable style={styles.input} onPress={() => setShowTimePicker(true)}>
+                      <Text style={timeInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
+                        {timeInput || 'Choose a time'}
+                      </Text>
+                    </Pressable>
+                    {showTimePicker && (
+                      <DateTimePicker
+                        value={timeInput ? new Date(`2000-01-01T${timeInput}:00`) : new Date()}
+                        mode="time"
+                        display="default"
+                        onChange={onNativeTimeChange}
+                      />
+                    )}
+                  </>
                 )}
               </>
             )}
+            </ScrollView>
 
             <View style={styles.modalActions}>
               <Pressable
@@ -438,11 +543,11 @@ export default function CircleDetailScreen() {
               <Pressable
                 style={[
                   styles.modalCreateButton,
-                  (!selectedVenue || !dateInput || !timeInput || creating) &&
+                  (!selectedSport || !selectedVenue || !dateInput || !timeInput || creating) &&
                     styles.joinButtonDisabled,
                 ]}
                 onPress={handleCreateGame}
-                disabled={!selectedVenue || !dateInput || !timeInput || creating}
+                disabled={!selectedSport || !selectedVenue || !dateInput || !timeInput || creating}
               >
                 <Text style={styles.modalCreateButtonText}>
                   {creating ? 'Creating...' : 'Create'}
@@ -732,6 +837,73 @@ const styles = StyleSheet.create({
   },
   venueList: {
     maxHeight: 140,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F4F1',
+    borderRadius: 10,
+    padding: 4,
+    gap: 4,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  tabButtonActive: {
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  tabButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7A73',
+  },
+  tabButtonTextActive: {
+    color: '#1F6F50',
+  },
+  cardGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  pickCard: {
+    minWidth: '47%',
+    flexGrow: 1,
+    borderWidth: 1.5,
+    borderColor: '#E7ECE9',
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: '#fff',
+  },
+  pickCardSelected: {
+    borderColor: '#1F6F50',
+    backgroundColor: '#F0F8F4',
+  },
+  pickCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#173A2E',
+  },
+  pickCardMeta: {
+    fontSize: 12,
+    color: '#6B7A73',
+    marginTop: 2,
+  },
+  pickCardBlurb: {
+    fontSize: 11,
+    color: '#8A968F',
+    marginTop: 4,
+  },
+  emptyStateText: {
+    fontSize: 13,
+    color: '#8A968F',
+    fontStyle: 'italic',
   },
   searchResultsList: {
     maxHeight: 160,

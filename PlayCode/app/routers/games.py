@@ -63,12 +63,21 @@ async def create_game(
         async with conn.transaction():
             await _require_circle_member(conn, payload.circle_id, current_user_id)
 
-            venue_row = await conn.fetchrow(
-                "SELECT sport_id FROM core.venues WHERE id = $1", payload.venue_id
+            venue_exists = await conn.fetchval(
+                "SELECT 1 FROM core.venues WHERE id = $1", payload.venue_id
             )
-            if venue_row is None:
+            if venue_exists is None:
                 raise HTTPException(status_code=404, detail="Venue not found")
-            if venue_row["sport_id"] != payload.sport_id:
+
+            hosts_sport = await conn.fetchval(
+                """
+                SELECT 1 FROM core.venue_sports
+                WHERE venue_id = $1 AND sport_id = $2
+                """,
+                payload.venue_id,
+                payload.sport_id,
+            )
+            if not hosts_sport:
                 raise HTTPException(
                     status_code=422, detail="Venue does not host the given sport"
                 )

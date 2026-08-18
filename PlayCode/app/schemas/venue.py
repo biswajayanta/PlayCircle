@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 class Venue(BaseModel):
     id: int
-    sport_id: int
+    sport_ids: list[int]
     name: str
     address: str | None
     city: str | None

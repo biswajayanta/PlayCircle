@@ -55,9 +55,21 @@ export interface GameDetail extends Game {
   participants: GameParticipant[];
 }
 
+export interface Sport {
+  id: number;
+  code: string;
+  name: string;
+  indoor_outdoor: 'indoor' | 'outdoor' | 'both';
+  min_players: number;
+  max_players: number;
+  scoring_config: Record<string, unknown>;
+  calorie_coefficient: number;
+  is_active: boolean;
+}
+
 export interface Venue {
   id: number;
-  sport_id: number;
+  sport_ids: number[];
   name: string;
   address: string | null;
   city: string | null;

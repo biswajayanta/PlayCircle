@@ -98,11 +98,16 @@ def _build_test_database():
                 )
             global PICKLEBALL_SPORT_ID
             PICKLEBALL_SPORT_ID = sport_id
-            await conn.execute(
+            venue_id = await conn.fetchval(
                 """
-                INSERT INTO core.venues (sport_id, name, address, city)
-                VALUES ($1, 'Test Court', '1 Test Street', 'Bengaluru')
-                """,
+                INSERT INTO core.venues (name, address, city)
+                VALUES ('Test Court', '1 Test Street', 'Bengaluru')
+                RETURNING id
+                """
+            )
+            await conn.execute(
+                "INSERT INTO core.venue_sports (venue_id, sport_id) VALUES ($1, $2)",
+                venue_id,
                 sport_id,
             )
         finally:
@@ -196,9 +201,15 @@ async def a_venue(client, circle_owner):
     resp = await client.get("/venues", headers=auth_headers(circle_owner["token"]))
     assert resp.status_code == 200, resp.text
     venues = resp.json()
-    pickleball_venues = [v for v in venues if v["sport_id"] == PICKLEBALL_SPORT_ID]
+    pickleball_venues = [v for v in venues if PICKLEBALL_SPORT_ID in v["sport_ids"]]
     assert len(pickleball_venues) > 0, (
         "No pickleball venue found — the test database needs seed data. "
         "Run the seed step before the test suite."
     )
-    return pickleball_venues[0]
+    venue = pickleball_venues[0]
+    # Convenience key for existing test files that build request payloads
+    # with venue['sport_id'] directly — a_venue is always filtered to a
+    # pickleball venue, so this is unambiguous even though the real API
+    # response only has sport_ids now.
+    venue["sport_id"] = PICKLEBALL_SPORT_ID
+    return venue
