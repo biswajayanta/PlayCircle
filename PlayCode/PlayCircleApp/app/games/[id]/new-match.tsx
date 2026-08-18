@@ -1,10 +1,10 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
-import { GameDetail, MatchDetail } from '../../../lib/types';
+import { GameDetail, MatchDetail, Sport } from '../../../lib/types';
 
 type TeamAssignment = Record<string, 1 | 2 | undefined>;
 type MatchFormat = 'singles' | 'doubles';
@@ -13,18 +13,30 @@ export default function NewMatchScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const [game, setGame] = useState<GameDetail | null>(null);
+  const [sport, setSport] = useState<Sport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [format, setFormat] = useState<MatchFormat>('doubles');
   const [assignments, setAssignments] = useState<TeamAssignment>({});
   const [starting, setStarting] = useState(false);
+  const [pointsToWinInput, setPointsToWinInput] = useState('');
+  const [maxBoardsInput, setMaxBoardsInput] = useState('');
 
   const load = useCallback(async () => {
     if (!id) return;
     setError(null);
     try {
-      const result = await api.get<GameDetail>(`/games/${id}`);
-      setGame(result);
+      const [gameResult, sportsResult] = await Promise.all([
+        api.get<GameDetail>(`/games/${id}`),
+        api.get<Sport[]>('/sports'),
+      ]);
+      setGame(gameResult);
+      const matchedSport = sportsResult.find((s) => s.id === gameResult.sport_id) ?? null;
+      setSport(matchedSport);
+      const defaultWinScore = matchedSport?.scoring_config?.win_score;
+      if (typeof defaultWinScore === 'number') {
+        setPointsToWinInput(String(defaultWinScore));
+      }
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -60,6 +72,14 @@ export default function NewMatchScreen() {
   const team2Count = Object.values(assignments).filter((t) => t === 2).length;
   const readyToStart = team1Count === perTeamNeeded && team2Count === perTeamNeeded;
 
+  // A sport gets configurable points/boards if it has a plain target score
+  // with no margin or serve-rule concept (Carrom-style race-to-target) —
+  // Pickleball's config has win_by, so it's excluded without hardcoding
+  // sport names, meaning any future sport shaped like Carrom gets this for
+  // free too.
+  const cfg = sport?.scoring_config;
+  const showAdvancedConfig = !!cfg && 'win_score' in cfg && !('win_by' in cfg);
+
   async function handleStart() {
     if (!id || !readyToStart) return;
     setStarting(true);
@@ -67,7 +87,28 @@ export default function NewMatchScreen() {
       const participants = Object.entries(assignments)
         .filter(([, team]) => team !== undefined)
         .map(([user_id, team]) => ({ user_id, team }));
-      const match = await api.post<MatchDetail>(`/games/${id}/matches`, { format, participants });
+
+      const payload: {
+        format: MatchFormat;
+        participants: typeof participants;
+        points_to_win?: number;
+        max_boards?: number;
+      } = { format, participants };
+
+      if (showAdvancedConfig) {
+        const parsedPoints = parseInt(pointsToWinInput, 10);
+        if (Number.isInteger(parsedPoints) && parsedPoints >= 1) {
+          payload.points_to_win = parsedPoints;
+        }
+        if (maxBoardsInput.trim()) {
+          const parsedBoards = parseInt(maxBoardsInput, 10);
+          if (Number.isInteger(parsedBoards) && parsedBoards >= 1) {
+            payload.max_boards = parsedBoards;
+          }
+        }
+      }
+
+      const match = await api.post<MatchDetail>(`/games/${id}/matches`, payload);
       router.replace(`/matches/${match.id}`);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to start match';
@@ -128,6 +169,33 @@ export default function NewMatchScreen() {
           ? 'Tap a player, then tap Team 1 or Team 2 for each (1 per team).'
           : 'Tap Team 1 or Team 2 for each player (2 per team).'}
       </Text>
+
+      {showAdvancedConfig && (
+        <View style={styles.configRow}>
+          <View style={styles.configField}>
+            <Text style={styles.configLabel}>Points to win</Text>
+            <TextInput
+              style={styles.configInput}
+              keyboardType="number-pad"
+              value={pointsToWinInput}
+              onChangeText={setPointsToWinInput}
+              placeholder="25"
+              placeholderTextColor="#9AA69E"
+            />
+          </View>
+          <View style={styles.configField}>
+            <Text style={styles.configLabel}>Max boards (optional)</Text>
+            <TextInput
+              style={styles.configInput}
+              keyboardType="number-pad"
+              value={maxBoardsInput}
+              onChangeText={setMaxBoardsInput}
+              placeholder="Unlimited"
+              placeholderTextColor="#9AA69E"
+            />
+          </View>
+        </View>
+      )}
 
       <FlatList
         data={confirmedParticipants}
@@ -231,6 +299,30 @@ const styles = StyleSheet.create({
     color: '#6B7A73',
     paddingHorizontal: 16,
     paddingTop: 12,
+  },
+  configRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  configField: {
+    flex: 1,
+  },
+  configLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7A73',
+    marginBottom: 4,
+  },
+  configInput: {
+    borderWidth: 1,
+    borderColor: '#D6DED9',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    backgroundColor: '#fff',
   },
   listContent: {
     padding: 16,
