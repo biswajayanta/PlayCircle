@@ -13,13 +13,17 @@ class PickleballEngine(ScoringEngine):
         self.points_to_win = points_to_win
         self.win_by = win_by
 
-    def initial_score(self) -> dict[str, Any]:
+    def initial_score(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
+        # No per-match overrides for pickleball today — config accepted for
+        # interface compatibility with the shared ScoringEngine base, ignored.
         return {"history": [], "team_1": 0, "team_2": 0}
 
     def _counts_from_history(self, history: list[int]) -> tuple[int, int]:
         return history.count(1), history.count(2)
 
-    def apply_point(self, score: dict[str, Any], team: int) -> dict[str, Any]:
+    def apply_point(self, score: dict[str, Any], team: int, points: int = 1) -> dict[str, Any]:
+        if points != 1:
+            raise ValueError("Pickleball scoring is always 1 point per rally")
         if self.is_complete(score):
             raise ValueError("Match is already complete")
         if team not in (1, 2):

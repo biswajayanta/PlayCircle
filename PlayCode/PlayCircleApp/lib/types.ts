@@ -137,9 +137,14 @@ export interface ExpenseDetail extends Expense {
   splits: ExpenseSplit[];
 }
 export interface MatchScore {
-  history: number[];
+  // number[] for rally-scored sports (Pickleball); {team, points}[] for
+  // board-scored sports (Carrom) — shape is sport-specific, nothing outside
+  // the backend engine and this screen inspects individual entries.
+  history: unknown[];
   team_1: number;
   team_2: number;
+  config?: { points_to_win?: number; max_boards?: number | null };
+  boards_played?: number;
 }
 
 export interface MatchParticipant {

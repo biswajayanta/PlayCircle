@@ -15,15 +15,19 @@ class ScoringEngine(ABC):
     """
 
     @abstractmethod
-    def initial_score(self) -> dict[str, Any]:
-        """The score dict for a freshly started match."""
+    def initial_score(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
+        """The score dict for a freshly started match. `config` carries any
+        per-match overrides (e.g. Carrom's points_to_win/max_boards) merged
+        on top of the sport's default scoring_config — sports that don't
+        need per-match config can simply ignore it."""
         ...
 
     @abstractmethod
-    def apply_point(self, score: dict[str, Any], team: int) -> dict[str, Any]:
-        """Return a new score dict with one point awarded to `team`.
+    def apply_point(self, score: dict[str, Any], team: int, points: int = 1) -> dict[str, Any]:
+        """Return a new score dict with `points` awarded to `team` (default
+        1, for sports where every scoring event is worth exactly one point).
         Must not mutate the input dict. Should raise ValueError if the match
-        is already complete (no more points can be scored)."""
+        is already complete, or if `points` isn't valid for this sport."""
         ...
 
     @abstractmethod

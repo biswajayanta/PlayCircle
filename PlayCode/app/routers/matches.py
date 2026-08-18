@@ -110,7 +110,10 @@ async def _save_score_and_maybe_complete(
         )
         for p in participant_rows:
             team_score = new_score.get(f"team_{p['team']}", 0)
-            result = "win" if p["team"] == winner else "loss"
+            if winner is None:
+                result = "draw"
+            else:
+                result = "win" if p["team"] == winner else "loss"
             await conn.execute(
                 """
                 UPDATE social.match_participants
@@ -192,7 +195,7 @@ async def record_point(
                 )
 
             try:
-                new_score = engine.apply_point(current_score, payload.team)
+                new_score = engine.apply_point(current_score, payload.team, payload.points)
             except ValueError as e:
                 raise HTTPException(status_code=409, detail=str(e))
 
@@ -254,9 +257,13 @@ async def create_match(
                     detail="This game's date has passed — no new matches can be started",
                 )
 
-            sport_name = await conn.fetchval(
-                "SELECT name FROM core.sports WHERE id = $1", game_row["sport_id"]
+            sport_row = await conn.fetchrow(
+                "SELECT name, scoring_config FROM core.sports WHERE id = $1", game_row["sport_id"]
             )
+            sport_name = sport_row["name"]
+            default_config = sport_row["scoring_config"]
+            if isinstance(default_config, str):
+                default_config = json.loads(default_config)
 
             expected_per_team = FORMAT_CAPACITY[payload.format]
             team_1_count = sum(1 for p in payload.participants if p.team == 1)
@@ -289,7 +296,12 @@ async def create_match(
 
             try:
                 engine = get_engine(sport_name)
-                initial_score = engine.initial_score()
+                match_config = dict(default_config)
+                if payload.points_to_win is not None:
+                    match_config["points_to_win"] = payload.points_to_win
+                if payload.max_boards is not None:
+                    match_config["max_boards"] = payload.max_boards
+                initial_score = engine.initial_score(match_config)
             except ValueError as e:
                 raise HTTPException(status_code=422, detail=str(e))
 
@@ -385,6 +397,15 @@ async def complete_match(
                 )
 
             await _require_circle_member_for_game(conn, match_row["game_id"], current_user_id)
+
+            creator_id = await conn.fetchval(
+                "SELECT creator_user_id FROM social.games WHERE id = $1", match_row["game_id"]
+            )
+            if creator_id != current_user_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Only the game's creator can conclude a match early",
+                )
 
             if payload.participants:
                 existing_rows = await conn.fetch(
