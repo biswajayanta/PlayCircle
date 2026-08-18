@@ -27,10 +27,14 @@ test('create a circle, create a game with no format picker, and join it', async 
   // No format picker should exist anymore — format moved to match creation.
   await expect(page.getByText('Format', { exact: true })).not.toBeVisible();
 
-  // Venue is now a real <select> dropdown, not clickable text rows —
-  // selectOption is the correct Playwright API for a native select, a
-  // .click() on the option text won't work while the dropdown is closed.
-  await page.locator('select').selectOption({ label: 'HSR Layout Pickleball Courts' });
+  // The New Game modal now opens on the Sport tab by default, showing
+  // sport cards. Picking Pickleball reveals matching venue cards below it
+  // (cross-filtered via the new venue_sports join table), which in turn
+  // reveals the date/time fields once both are chosen.
+  await page.getByText('Pickleball', { exact: true }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByText('HSR Layout Pickleball Courts', { exact: true }).click();
+  await page.waitForTimeout(300);
 
   const dateInput = page.locator('input[type="date"]');
   const timeInput = page.locator('input[type="time"]');
