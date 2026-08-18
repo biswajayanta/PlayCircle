@@ -337,12 +337,14 @@ export default function GameDetailScreen() {
                       <Text style={styles.expensesLinkText}>🗓️ Reschedule</Text>
                     </Pressable>
                   )}
-                  <Pressable
-                    style={styles.cancelLink}
-                    onPress={() => setCancelConfirmOpen(true)}
-                  >
-                    <Text style={styles.cancelLinkText}>✕ Cancel game</Text>
-                  </Pressable>
+                  {matches.length === 0 && !(game.has_expenses && !game.all_settled) && (
+                    <Pressable
+                      style={styles.cancelLink}
+                      onPress={() => setCancelConfirmOpen(true)}
+                    >
+                      <Text style={styles.cancelLinkText}>✕ Cancel game</Text>
+                    </Pressable>
+                  )}
                 </View>
               )}
 
@@ -663,6 +665,7 @@ const styles = StyleSheet.create({
   },
   linkRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginTop: 12,
   },
