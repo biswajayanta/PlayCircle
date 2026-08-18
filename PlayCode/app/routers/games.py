@@ -347,6 +347,15 @@ async def reschedule_game(
                     detail="Can't reschedule — this game's original start time has already passed",
                 )
 
+            match_count = await conn.fetchval(
+                "SELECT count(*) FROM social.matches WHERE game_id = $1", game_id
+            )
+            if match_count > 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Can't reschedule — matches have already been played in this game",
+                )
+
             await conn.execute(
                 "UPDATE social.games SET scheduled_at = $1 WHERE id = $2",
                 payload.scheduled_at,

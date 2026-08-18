@@ -324,7 +324,7 @@ export default function GameDetailScreen() {
 
               {isGameOwner && isActive && (
                 <View style={styles.linkRow}>
-                  {!game.is_past && (
+                  {!game.is_past && matches.length === 0 && (
                     <Pressable
                       style={styles.expensesLink}
                       onPress={() => {
