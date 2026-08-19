@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -34,6 +35,11 @@ class MatchSummary(BaseModel):
     team_1_score: int
     team_2_score: int
     winning_team: list[str] | None  # display names of the winning team, if decided
+    # Per-set breakdown for set-based sports (Pickleball: [{"team_1":..,
+    # "team_2":.., "winner":..}]) or per-board breakdown for board-based
+    # sports (Carrom: [{"team":.., "points":..}]). None for sports with no
+    # sub-match detail to drill into.
+    breakdown: list[dict[str, Any]] | None = None
 
 
 class GameReport(BaseModel):

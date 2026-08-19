@@ -219,6 +219,10 @@ export interface MatchSummary {
   team_1_score: number;
   team_2_score: number;
   winning_team: string[] | null;
+  // Per-set detail ({team_1,team_2,winner}[]) or per-board detail
+  // ({team,points}[]), depending on the sport. Absent for sports with
+  // nothing to drill into.
+  breakdown?: Record<string, unknown>[] | null;
 }
 
 export interface GameReport {

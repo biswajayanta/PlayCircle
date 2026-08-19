@@ -140,7 +140,9 @@ export default function CircleDetailScreen() {
       setCircle(circleResult);
       setGames(gamesResult);
       setVenues(venuesResult);
-      setSports(sportsResult);
+      // Badminton has no scoring engine yet — hide it from selection until
+      // one exists. Remove this filter once app/scoring/badminton.py lands.
+      setSports(sportsResult.filter((s) => s.code !== 'badminton'));
     } catch (err) {
       setError(
         err instanceof ApiError

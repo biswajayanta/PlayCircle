@@ -188,6 +188,15 @@ async def get_game_report(
             team_1_score = score.get("team_1", 0)
             team_2_score = score.get("team_2", 0)
 
+            # Set-based sports (Pickleball) carry a "sets" array; board-based
+            # sports (Carrom) carry their per-board detail in "history".
+            # Plain rally sports have neither — nothing to drill into.
+            breakdown = None
+            if "sets" in score:
+                breakdown = score["sets"]
+            elif "boards_played" in score:
+                breakdown = score.get("history", [])
+
             participant_rows = await conn.fetch(
                 """
                 SELECT u.display_name, mp.team
@@ -217,6 +226,7 @@ async def get_game_report(
                     team_1_score=team_1_score,
                     team_2_score=team_2_score,
                     winning_team=winning_team,
+                    breakdown=breakdown,
                 )
             )
 
