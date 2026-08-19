@@ -368,10 +368,19 @@ export default function GameDetailScreen() {
               )}
               {isActive && !game.is_past && (
                 <Pressable
-                  style={styles.startMatchButton}
-                  onPress={() => router.push(`/games/${id}/new-match`)}
+                  style={[
+                    styles.startMatchButton,
+                    game.confirmed_count < 2 && styles.disabledButton,
+                  ]}
+                  onPress={() => {
+                    if (game.confirmed_count < 2) return;
+                    router.push(`/games/${id}/new-match`);
+                  }}
+                  disabled={game.confirmed_count < 2}
                 >
-                  <Text style={styles.startMatchButtonText}>+ Start Match</Text>
+                  <Text style={styles.startMatchButtonText}>
+                    {game.confirmed_count < 2 ? 'Need 2+ players to start' : '+ Start Match'}
+                  </Text>
                 </Pressable>
               )}
             </View>
