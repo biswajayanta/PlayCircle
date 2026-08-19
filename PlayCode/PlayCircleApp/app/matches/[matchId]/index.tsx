@@ -25,7 +25,13 @@ const SPORT_RULES_BLURB: Record<string, string> = {
 function formatRulesNote(match: MatchDetail): string {
   const label = match.sport_name.charAt(0).toUpperCase() + match.sport_name.slice(1);
   const cfg = match.score?.config;
+  if (cfg?.points_to_win && cfg?.win_by) {
+    // Set-based (Pickleball): margin-based win condition per set.
+    const setsPart = cfg.num_sets ? `best of ${cfg.num_sets} sets, ` : '';
+    return `${label} · ${setsPart}race to ${cfg.points_to_win}, win by ${cfg.win_by}`;
+  }
   if (cfg?.points_to_win) {
+    // Board-based (Carrom): plain race to a target, no margin.
     const boardsPart = cfg.max_boards ? `, best of ${cfg.max_boards} boards` : '';
     return `${label} · race to ${cfg.points_to_win}${boardsPart}`;
   }
@@ -154,13 +160,22 @@ export default function MatchScoreScreen() {
     team_2: match.score?.team_2 ?? 0,
     boardsPlayed: match.score?.boards_played,
     config: match.score?.config,
+    sets: match.score?.sets,
+    currentSetTeam1: match.score?.current_set_team_1,
+    currentSetTeam2: match.score?.current_set_team_2,
   };
   // Board-based sports (Carrom) carry boards_played in their score state;
-  // rally-based sports (Pickleball) don't — this is how the screen tells
-  // them apart without hardcoding a sport name check.
+  // set-based sports (Pickleball) carry a sets array instead; plain
+  // rally-based sports carry neither — this is how the screen tells them
+  // apart without hardcoding a sport name check.
   const isBoardBased = safeScore.boardsPlayed !== undefined;
+  const isSetBased = safeScore.sets !== undefined;
   const boardPoints = parseInt(boardPointsInput, 10);
   const boardPointsValid = Number.isInteger(boardPoints) && boardPoints >= 1;
+  const canUndo = isSetBased
+    ? (safeScore.currentSetTeam1 ?? 0) + (safeScore.currentSetTeam2 ?? 0) > 0 ||
+      (safeScore.sets?.length ?? 0) > 0
+    : safeScore.history.length > 0;
 
   const winnerTeam =
     isComplete && safeScore.team_1 !== safeScore.team_2
@@ -186,7 +201,8 @@ export default function MatchScoreScreen() {
         <View style={styles.teamPanel}>
           <Text style={styles.teamName}>{teamNames(match, 1)}</Text>
           <Text style={styles.scoreNumber}>{safeScore.team_1}</Text>
-          {!isBoardBased && (
+          {isSetBased && <Text style={styles.setsWonLabel}>sets</Text>}
+          {!isBoardBased && !isSetBased && (
             <Pressable
               style={[styles.pointButton, (!isLive || scoring) && styles.disabledButton]}
               onPress={() => handlePoint(1)}
@@ -202,7 +218,8 @@ export default function MatchScoreScreen() {
         <View style={styles.teamPanel}>
           <Text style={styles.teamName}>{teamNames(match, 2)}</Text>
           <Text style={styles.scoreNumber}>{safeScore.team_2}</Text>
-          {!isBoardBased && (
+          {isSetBased && <Text style={styles.setsWonLabel}>sets</Text>}
+          {!isBoardBased && !isSetBased && (
             <Pressable
               style={[styles.pointButton, (!isLive || scoring) && styles.disabledButton]}
               onPress={() => handlePoint(2)}
@@ -213,6 +230,51 @@ export default function MatchScoreScreen() {
           )}
         </View>
       </View>
+
+      {isSetBased && (
+        <View style={styles.boardSection}>
+          <Text style={styles.boardMeta}>
+            Set {(safeScore.sets?.length ?? 0) + (isLive ? 1 : 0)}
+            {safeScore.config?.num_sets ? ` of ${safeScore.config.num_sets}` : ''}
+            {safeScore.config?.points_to_win
+              ? ` · race to ${safeScore.config.points_to_win}, win by ${safeScore.config.win_by ?? 2}`
+              : ''}
+          </Text>
+
+          <View style={styles.currentSetRow}>
+            <View style={styles.currentSetTeam}>
+              <Text style={styles.currentSetNumber}>{safeScore.currentSetTeam1 ?? 0}</Text>
+              <Pressable
+                style={[styles.currentSetButton, (!isLive || scoring) && styles.disabledButton]}
+                onPress={() => handlePoint(1)}
+                disabled={!isLive || scoring}
+              >
+                <Text style={styles.boardWinButtonText}>+1</Text>
+              </Pressable>
+            </View>
+            <View style={styles.currentSetTeam}>
+              <Text style={styles.currentSetNumber}>{safeScore.currentSetTeam2 ?? 0}</Text>
+              <Pressable
+                style={[styles.currentSetButton, (!isLive || scoring) && styles.disabledButton]}
+                onPress={() => handlePoint(2)}
+                disabled={!isLive || scoring}
+              >
+                <Text style={styles.boardWinButtonText}>+1</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {safeScore.sets && safeScore.sets.length > 0 && (
+            <View style={styles.boardHistory}>
+              {safeScore.sets.map((s, i) => (
+                <Text key={i} style={styles.boardHistoryRow}>
+                  Set {i + 1}: {s.team_1}–{s.team_2} → {teamNames(match, s.winner)}
+                </Text>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
 
       {isBoardBased && (
         <View style={styles.boardSection}>
@@ -269,9 +331,9 @@ export default function MatchScoreScreen() {
       )}
 
       <Pressable
-        style={[styles.undoButton, (safeScore.history.length === 0 || scoring) && styles.disabledButton]}
+        style={[styles.undoButton, (!canUndo || scoring) && styles.disabledButton]}
         onPress={handleUndo}
-        disabled={safeScore.history.length === 0 || scoring}
+        disabled={!canUndo || scoring}
       >
         <Text style={styles.undoButtonText}>
           {isBoardBased ? 'Undo last board' : 'Undo last point'}
@@ -439,6 +501,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1F6F50',
     marginBottom: 10,
+  },
+  setsWonLabel: {
+    fontSize: 11,
+    color: '#8A968F',
+    marginTop: -6,
+  },
+  currentSetRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 4,
+  },
+  currentSetTeam: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  currentSetNumber: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#173A2E',
+  },
+  currentSetButton: {
+    backgroundColor: '#1F6F50',
+    borderRadius: 999,
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   fieldLabel: {
     fontSize: 13,

@@ -21,6 +21,8 @@ export default function NewMatchScreen() {
   const [starting, setStarting] = useState(false);
   const [pointsToWinInput, setPointsToWinInput] = useState('');
   const [maxBoardsInput, setMaxBoardsInput] = useState('');
+  const [numSetsChoice, setNumSetsChoice] = useState<1 | 3 | 5>(3);
+  const [pointsPerSetChoice, setPointsPerSetChoice] = useState<11 | 15 | 21>(11);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -40,6 +42,14 @@ export default function NewMatchScreen() {
       const defaultMaxBoards = matchedSport?.scoring_config?.max_boards;
       if (typeof defaultMaxBoards === 'number') {
         setMaxBoardsInput(String(defaultMaxBoards));
+      }
+      const defaultPointsPerSet = matchedSport?.scoring_config?.win_score;
+      if (defaultPointsPerSet === 11 || defaultPointsPerSet === 15 || defaultPointsPerSet === 21) {
+        setPointsPerSetChoice(defaultPointsPerSet);
+      }
+      const defaultNumSets = matchedSport?.scoring_config?.best_of;
+      if (defaultNumSets === 1 || defaultNumSets === 3 || defaultNumSets === 5) {
+        setNumSetsChoice(defaultNumSets);
       }
     } catch (err) {
       setError(
@@ -76,13 +86,13 @@ export default function NewMatchScreen() {
   const team2Count = Object.values(assignments).filter((t) => t === 2).length;
   const readyToStart = team1Count === perTeamNeeded && team2Count === perTeamNeeded;
 
-  // A sport gets configurable points/boards if it has a plain target score
-  // with no margin or serve-rule concept (Carrom-style race-to-target) —
-  // Pickleball's config has win_by, so it's excluded without hardcoding
-  // sport names, meaning any future sport shaped like Carrom gets this for
-  // free too.
+  // A sport is board-based (Carrom-style: free-typed target, no margin)
+  // if it has win_score but no win_by. It's set-based (Pickleball-style:
+  // fixed choices, margin-based sets) if it has both. Neither hardcodes a
+  // sport name — any future sport shaped like either gets this for free.
   const cfg = sport?.scoring_config;
-  const showAdvancedConfig = !!cfg && 'win_score' in cfg && !('win_by' in cfg);
+  const isBoardBasedSport = !!cfg && 'win_score' in cfg && !('win_by' in cfg);
+  const isSetBasedSport = !!cfg && 'win_score' in cfg && 'win_by' in cfg;
 
   async function handleStart() {
     if (!id || !readyToStart) return;
@@ -97,9 +107,10 @@ export default function NewMatchScreen() {
         participants: typeof participants;
         points_to_win?: number;
         max_boards?: number;
+        num_sets?: number;
       } = { format, participants };
 
-      if (showAdvancedConfig) {
+      if (isBoardBasedSport) {
         const parsedPoints = parseInt(pointsToWinInput, 10);
         if (Number.isInteger(parsedPoints) && parsedPoints >= 1) {
           payload.points_to_win = parsedPoints;
@@ -110,6 +121,9 @@ export default function NewMatchScreen() {
             payload.max_boards = parsedBoards;
           }
         }
+      } else if (isSetBasedSport) {
+        payload.points_to_win = pointsPerSetChoice;
+        payload.num_sets = numSetsChoice;
       }
 
       const match = await api.post<MatchDetail>(`/games/${id}/matches`, payload);
@@ -174,7 +188,7 @@ export default function NewMatchScreen() {
           : 'Tap Team 1 or Team 2 for each player (2 per team).'}
       </Text>
 
-      {showAdvancedConfig && (
+      {isBoardBasedSport && (
         <View style={styles.configRow}>
           <View style={styles.configField}>
             <Text style={styles.configLabel}>Points to win</Text>
@@ -197,6 +211,50 @@ export default function NewMatchScreen() {
               placeholder="Unlimited"
               placeholderTextColor="#9AA69E"
             />
+          </View>
+        </View>
+      )}
+
+      {isSetBasedSport && (
+        <View style={styles.setConfigSection}>
+          <Text style={styles.configLabel}>Number of sets</Text>
+          <View style={styles.toggleRow}>
+            {([1, 3, 5] as const).map((n) => (
+              <Pressable
+                key={n}
+                style={[styles.toggleButton, numSetsChoice === n && styles.toggleButtonSelected]}
+                onPress={() => setNumSetsChoice(n)}
+              >
+                <Text
+                  style={[
+                    styles.toggleButtonText,
+                    numSetsChoice === n && styles.toggleButtonTextSelected,
+                  ]}
+                >
+                  {n}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={[styles.configLabel, styles.setConfigSpacing]}>Points per set</Text>
+          <View style={styles.toggleRow}>
+            {([11, 15, 21] as const).map((n) => (
+              <Pressable
+                key={n}
+                style={[styles.toggleButton, pointsPerSetChoice === n && styles.toggleButtonSelected]}
+                onPress={() => setPointsPerSetChoice(n)}
+              >
+                <Text
+                  style={[
+                    styles.toggleButtonText,
+                    pointsPerSetChoice === n && styles.toggleButtonTextSelected,
+                  ]}
+                >
+                  {n}
+                </Text>
+              </Pressable>
+            ))}
           </View>
         </View>
       )}
@@ -327,6 +385,39 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 14,
     backgroundColor: '#fff',
+  },
+  setConfigSection: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  setConfigSpacing: {
+    marginTop: 12,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  toggleButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D6DED9',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  toggleButtonSelected: {
+    backgroundColor: '#1F6F50',
+    borderColor: '#1F6F50',
+  },
+  toggleButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#173A2E',
+  },
+  toggleButtonTextSelected: {
+    color: '#fff',
   },
   listContent: {
     padding: 16,

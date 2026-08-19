@@ -137,14 +137,20 @@ export interface ExpenseDetail extends Expense {
   splits: ExpenseSplit[];
 }
 export interface MatchScore {
-  // number[] for rally-scored sports (Pickleball); {team, points}[] for
-  // board-scored sports (Carrom) — shape is sport-specific, nothing outside
-  // the backend engine and this screen inspects individual entries.
+  // number[] for rally-scored sports (Pickleball, within a set); {team,
+  // points}[] for board-scored sports (Carrom) — shape is sport-specific,
+  // nothing outside the backend engine and this screen inspects entries.
   history: unknown[];
   team_1: number;
   team_2: number;
-  config?: { points_to_win?: number; max_boards?: number | null };
+  config?: { points_to_win?: number; win_by?: number; max_boards?: number | null; num_sets?: number };
   boards_played?: number;
+  // Set-based sports only (Pickleball): completed sets, plus the set
+  // currently being played.
+  sets?: { team_1: number; team_2: number; winner: number; history: number[] }[];
+  current_set_history?: number[];
+  current_set_team_1?: number;
+  current_set_team_2?: number;
 }
 
 export interface MatchParticipant {

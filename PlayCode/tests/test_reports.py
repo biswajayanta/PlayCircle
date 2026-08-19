@@ -79,7 +79,7 @@ async def test_game_report_shows_match_with_winner(
         headers=auth_headers(circle_owner["token"]),
     )
     match_id = match_resp.json()["id"]
-    for _ in range(11):
+    for _ in range(33):  # 3 sets x 11 points, all to team 1
         await client.post(
             f"/matches/{match_id}/points",
             json={"team": 1},
@@ -91,7 +91,7 @@ async def test_game_report_shows_match_with_winner(
     )
     assert report.status_code == 200
     match_summary = report.json()["matches"][0]
-    assert match_summary["team_1_score"] == 11
+    assert match_summary["team_1_score"] == 3
     assert circle_owner["user"]["display_name"] in match_summary["winning_team"]
 
 
@@ -130,7 +130,7 @@ async def test_leaderboard_reflects_win_loss_record(
         headers=auth_headers(circle_owner["token"]),
     )
     match_id = match_resp.json()["id"]
-    for _ in range(11):
+    for _ in range(33):  # 3 sets x 11 points, all to team 1
         await client.post(
             f"/matches/{match_id}/points",
             json={"team": 1},

@@ -301,6 +301,8 @@ async def create_match(
                     match_config["points_to_win"] = payload.points_to_win
                 if payload.max_boards is not None:
                     match_config["max_boards"] = payload.max_boards
+                if payload.num_sets is not None:
+                    match_config["num_sets"] = payload.num_sets
                 initial_score = engine.initial_score(match_config)
             except ValueError as e:
                 raise HTTPException(status_code=422, detail=str(e))
