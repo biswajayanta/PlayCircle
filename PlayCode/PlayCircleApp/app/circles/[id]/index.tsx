@@ -117,6 +117,8 @@ export default function CircleDetailScreen() {
   const [pickerTab, setPickerTab] = useState<'sport' | 'venue'>('sport');
   const [selectedSport, setSelectedSport] = useState<Sport | null>(null);
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
+  const [venueSearchQuery, setVenueSearchQuery] = useState('');
+  const [dateTimeModalOpen, setDateTimeModalOpen] = useState(false);
   const [dateInput, setDateInput] = useState('');
   const [timeInput, setTimeInput] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -189,9 +191,11 @@ export default function CircleDetailScreen() {
       });
       setGames((prev) => [...prev, created].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at)));
       setCreateOpen(false);
+      setDateTimeModalOpen(false);
       setSelectedSport(null);
       setSelectedVenue(null);
       setPickerTab('sport');
+      setVenueSearchQuery('');
       setDateInput('');
       setTimeInput('');
     } catch (err) {
@@ -262,6 +266,10 @@ export default function CircleDetailScreen() {
             setSelectedSport(null);
             setSelectedVenue(null);
             setPickerTab('sport');
+            setVenueSearchQuery('');
+            setDateTimeModalOpen(false);
+            setDateInput('');
+            setTimeInput('');
             setCreateOpen(true);
           }}
         >
@@ -354,7 +362,10 @@ export default function CircleDetailScreen() {
             <View style={styles.tabRow}>
               <Pressable
                 style={[styles.tabButton, pickerTab === 'sport' && styles.tabButtonActive]}
-                onPress={() => setPickerTab('sport')}
+                onPress={() => {
+                  setPickerTab('sport');
+                  setVenueSearchQuery('');
+                }}
               >
                 <Text style={[styles.tabButtonText, pickerTab === 'sport' && styles.tabButtonTextActive]}>
                   Sport
@@ -362,7 +373,10 @@ export default function CircleDetailScreen() {
               </Pressable>
               <Pressable
                 style={[styles.tabButton, pickerTab === 'venue' && styles.tabButtonActive]}
-                onPress={() => setPickerTab('venue')}
+                onPress={() => {
+                  setPickerTab('venue');
+                  setVenueSearchQuery('');
+                }}
               >
                 <Text style={[styles.tabButtonText, pickerTab === 'venue' && styles.tabButtonTextActive]}>
                   Venue
@@ -380,9 +394,15 @@ export default function CircleDetailScreen() {
                       style={[styles.pickCard, selectedSport?.id === sport.id && styles.pickCardSelected]}
                       onPress={() => {
                         setSelectedSport(sport);
-                        // Clear the venue if it doesn't actually host this sport.
                         if (selectedVenue && !selectedVenue.sport_ids.includes(sport.id)) {
+                          // Doesn't host this sport — clear it rather than
+                          // leave a stale, invalid pairing.
                           setSelectedVenue(null);
+                        } else if (selectedVenue) {
+                          // Venue was already compatible — both sides of
+                          // the pair are now set, so move straight to
+                          // date/time instead of leaving it buried below.
+                          setDateTimeModalOpen(true);
                         }
                       }}
                     >
@@ -400,14 +420,30 @@ export default function CircleDetailScreen() {
                 {selectedSport && (
                   <>
                     <Text style={styles.fieldLabel}>Venue</Text>
+                    {venues.filter((v) => v.sport_ids.includes(selectedSport.id)).length > 4 && (
+                      <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search venues..."
+                        placeholderTextColor="#9AA69E"
+                        value={venueSearchQuery}
+                        onChangeText={setVenueSearchQuery}
+                      />
+                    )}
                     <View style={styles.cardGrid}>
                       {venues
                         .filter((v) => v.sport_ids.includes(selectedSport.id))
+                        .filter((v) => v.name.toLowerCase().includes(venueSearchQuery.toLowerCase()))
                         .map((venue) => (
                           <Pressable
                             key={venue.id}
                             style={[styles.pickCard, selectedVenue?.id === venue.id && styles.pickCardSelected]}
-                            onPress={() => setSelectedVenue(venue)}
+                            onPress={() => {
+                              setSelectedVenue(venue);
+                              // This list is already filtered to venues that
+                              // host the selected sport, so the pair is
+                              // complete the moment a venue is tapped here.
+                              setDateTimeModalOpen(true);
+                            }}
                           >
                             <Text style={styles.pickCardTitle}>{venue.name}</Text>
                             {venue.address && <Text style={styles.pickCardMeta}>{venue.address}</Text>}
@@ -425,29 +461,41 @@ export default function CircleDetailScreen() {
             ) : (
               <>
                 <Text style={styles.fieldLabel}>Choose a venue</Text>
+                {venues.length > 4 && (
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search venues..."
+                    placeholderTextColor="#9AA69E"
+                    value={venueSearchQuery}
+                    onChangeText={setVenueSearchQuery}
+                  />
+                )}
                 <View style={styles.cardGrid}>
-                  {venues.map((venue) => (
-                    <Pressable
-                      key={venue.id}
-                      style={[styles.pickCard, selectedVenue?.id === venue.id && styles.pickCardSelected]}
-                      onPress={() => {
-                        setSelectedVenue(venue);
-                        // Clear the sport if this venue doesn't actually host it.
-                        if (selectedSport && !venue.sport_ids.includes(selectedSport.id)) {
-                          setSelectedSport(null);
-                        }
-                      }}
-                    >
-                      <Text style={styles.pickCardTitle}>{venue.name}</Text>
-                      {venue.address && <Text style={styles.pickCardMeta}>{venue.address}</Text>}
-                      <Text style={styles.pickCardBlurb}>
-                        {sports
-                          .filter((s) => venue.sport_ids.includes(s.id))
-                          .map((s) => s.name)
-                          .join(' · ')}
-                      </Text>
-                    </Pressable>
-                  ))}
+                  {venues
+                    .filter((v) => v.name.toLowerCase().includes(venueSearchQuery.toLowerCase()))
+                    .map((venue) => (
+                      <Pressable
+                        key={venue.id}
+                        style={[styles.pickCard, selectedVenue?.id === venue.id && styles.pickCardSelected]}
+                        onPress={() => {
+                          setSelectedVenue(venue);
+                          if (selectedSport && !venue.sport_ids.includes(selectedSport.id)) {
+                            setSelectedSport(null);
+                          } else if (selectedSport) {
+                            setDateTimeModalOpen(true);
+                          }
+                        }}
+                      >
+                        <Text style={styles.pickCardTitle}>{venue.name}</Text>
+                        {venue.address && <Text style={styles.pickCardMeta}>{venue.address}</Text>}
+                        <Text style={styles.pickCardBlurb}>
+                          {sports
+                            .filter((s) => venue.sport_ids.includes(s.id))
+                            .map((s) => s.name)
+                            .join(' · ')}
+                        </Text>
+                      </Pressable>
+                    ))}
                 </View>
 
                 {selectedVenue && (
@@ -460,7 +508,13 @@ export default function CircleDetailScreen() {
                           <Pressable
                             key={sport.id}
                             style={[styles.pickCard, selectedSport?.id === sport.id && styles.pickCardSelected]}
-                            onPress={() => setSelectedSport(sport)}
+                            onPress={() => {
+                              setSelectedSport(sport);
+                              // Venue is already selected and this list is
+                              // pre-filtered to sports it hosts, so tapping
+                              // here always completes the pair.
+                              setDateTimeModalOpen(true);
+                            }}
                           >
                             <Text style={styles.pickCardTitle}>{sport.name}</Text>
                             {formatSportBlurb(sport) && (
@@ -473,64 +527,6 @@ export default function CircleDetailScreen() {
                 )}
               </>
             )}
-
-            {selectedSport && selectedVenue && (
-              <>
-                <Text style={styles.fieldLabel}>Date</Text>
-                {Platform.OS === 'web' ? (
-                  React.createElement('input', {
-                    type: 'date',
-                    value: dateInput,
-                    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
-                      setDateInput(e.target.value),
-                    style: webDateInputStyle,
-                  })
-                ) : (
-                  <>
-                    <Pressable style={styles.input} onPress={() => setShowDatePicker(true)}>
-                      <Text style={dateInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
-                        {dateInput || 'Choose a date'}
-                      </Text>
-                    </Pressable>
-                    {showDatePicker && (
-                      <DateTimePicker
-                        value={dateInput ? new Date(`${dateInput}T00:00:00`) : new Date()}
-                        mode="date"
-                        display="default"
-                        onChange={onNativeDateChange}
-                      />
-                    )}
-                  </>
-                )}
-
-                <Text style={styles.fieldLabel}>Time</Text>
-                {Platform.OS === 'web' ? (
-                  React.createElement('input', {
-                    type: 'time',
-                    value: timeInput,
-                    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
-                      setTimeInput(e.target.value),
-                    style: webDateInputStyle,
-                  })
-                ) : (
-                  <>
-                    <Pressable style={styles.input} onPress={() => setShowTimePicker(true)}>
-                      <Text style={timeInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
-                        {timeInput || 'Choose a time'}
-                      </Text>
-                    </Pressable>
-                    {showTimePicker && (
-                      <DateTimePicker
-                        value={timeInput ? new Date(`2000-01-01T${timeInput}:00`) : new Date()}
-                        mode="time"
-                        display="default"
-                        onChange={onNativeTimeChange}
-                      />
-                    )}
-                  </>
-                )}
-              </>
-            )}
             </ScrollView>
 
             <View style={styles.modalActions}>
@@ -539,6 +535,90 @@ export default function CircleDetailScreen() {
                 onPress={() => setCreateOpen(false)}
               >
                 <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </Pressable>
+              {selectedSport && selectedVenue && (
+                <Pressable
+                  style={styles.modalCreateButton}
+                  onPress={() => setDateTimeModalOpen(true)}
+                >
+                  <Text style={styles.modalCreateButtonText}>Next: Date &amp; Time</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={dateTimeModalOpen} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>When?</Text>
+            {selectedSport && selectedVenue && (
+              <Text style={styles.dateTimeSummary}>
+                {selectedSport.name} at {selectedVenue.name}
+              </Text>
+            )}
+
+            <Text style={styles.fieldLabel}>Date</Text>
+            {Platform.OS === 'web' ? (
+              React.createElement('input', {
+                type: 'date',
+                value: dateInput,
+                onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+                  setDateInput(e.target.value),
+                style: webDateInputStyle,
+              })
+            ) : (
+              <>
+                <Pressable style={styles.input} onPress={() => setShowDatePicker(true)}>
+                  <Text style={dateInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
+                    {dateInput || 'Choose a date'}
+                  </Text>
+                </Pressable>
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={dateInput ? new Date(`${dateInput}T00:00:00`) : new Date()}
+                    mode="date"
+                    display="default"
+                    onChange={onNativeDateChange}
+                  />
+                )}
+              </>
+            )}
+
+            <Text style={styles.fieldLabel}>Time</Text>
+            {Platform.OS === 'web' ? (
+              React.createElement('input', {
+                type: 'time',
+                value: timeInput,
+                onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+                  setTimeInput(e.target.value),
+                style: webDateInputStyle,
+              })
+            ) : (
+              <>
+                <Pressable style={styles.input} onPress={() => setShowTimePicker(true)}>
+                  <Text style={timeInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
+                    {timeInput || 'Choose a time'}
+                  </Text>
+                </Pressable>
+                {showTimePicker && (
+                  <DateTimePicker
+                    value={timeInput ? new Date(`2000-01-01T${timeInput}:00`) : new Date()}
+                    mode="time"
+                    display="default"
+                    onChange={onNativeTimeChange}
+                  />
+                )}
+              </>
+            )}
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalCancelButton}
+                onPress={() => setDateTimeModalOpen(false)}
+              >
+                <Text style={styles.modalCancelButtonText}>Back</Text>
               </Pressable>
               <Pressable
                 style={[
@@ -904,6 +984,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8A968F',
     fontStyle: 'italic',
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#D6DED9',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    marginBottom: 10,
+    backgroundColor: '#fff',
+  },
+  dateTimeSummary: {
+    fontSize: 13,
+    color: '#6B7A73',
+    marginBottom: 14,
   },
   searchResultsList: {
     maxHeight: 160,

@@ -16,7 +16,7 @@ export default function NewMatchScreen() {
   const [sport, setSport] = useState<Sport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [format, setFormat] = useState<MatchFormat>('doubles');
+  const [format, setFormat] = useState<MatchFormat>('singles');
   const [assignments, setAssignments] = useState<TeamAssignment>({});
   const [starting, setStarting] = useState(false);
   const [pointsToWinInput, setPointsToWinInput] = useState('');
@@ -36,6 +36,10 @@ export default function NewMatchScreen() {
       const defaultWinScore = matchedSport?.scoring_config?.win_score;
       if (typeof defaultWinScore === 'number') {
         setPointsToWinInput(String(defaultWinScore));
+      }
+      const defaultMaxBoards = matchedSport?.scoring_config?.max_boards;
+      if (typeof defaultMaxBoards === 'number') {
+        setMaxBoardsInput(String(defaultMaxBoards));
       }
     } catch (err) {
       setError(
