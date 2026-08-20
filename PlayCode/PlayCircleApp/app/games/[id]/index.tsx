@@ -15,6 +15,7 @@ import {
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
+import { subscribeToDataChanged } from '../../../lib/assistantEvents';
 import { GameDetail, Match, Post, PostDetail, UserMe } from '../../../lib/types';
 
 // Plain CSS-in-JS for the raw <input type="datetime-local"> used on web —
@@ -128,6 +129,20 @@ export default function GameDetailScreen() {
       load();
     }, [load])
   );
+
+  useEffect(() => {
+    return subscribeToDataChanged((event) => {
+      if (
+        (event.entityType === 'game' && event.entityId === id) ||
+        // A match belonging to this game changing (started, scored,
+        // concluded) also affects what this screen shows — the matches
+        // list and the game's own status/counts.
+        (event.entityType === 'match' && matches.some((m) => m.id === event.entityId))
+      ) {
+        load();
+      }
+    });
+  }, [id, matches, load]);
 
   // Android dismisses the picker itself and reports event.type; iOS keeps it
   // open inline, so we only close it here on Android after a real selection.

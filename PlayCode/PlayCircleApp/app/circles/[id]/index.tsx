@@ -1,6 +1,6 @@
 import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -16,6 +16,7 @@ import {
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
+import { subscribeToDataChanged } from '../../../lib/assistantEvents';
 import { Circle, Game, Sport, Venue } from '../../../lib/types';
 
 // Plain CSS-in-JS for the raw <input type="datetime-local"> used on web —
@@ -159,6 +160,14 @@ export default function CircleDetailScreen() {
       load();
     }, [load])
   );
+
+  useEffect(() => {
+    return subscribeToDataChanged((event) => {
+      if (event.entityType === 'circle' && event.entityId === id) {
+        load();
+      }
+    });
+  }, [id, load]);
 
   // Android dismisses the picker itself and reports event.type; iOS keeps it
   // open inline, so we only close it here on Android after a real selection.

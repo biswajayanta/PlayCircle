@@ -55,6 +55,32 @@ export interface GameDetail extends Game {
   participants: GameParticipant[];
 }
 
+export interface AssistantContext {
+  circle_id?: string;
+  game_id?: string;
+  match_id?: string;
+}
+
+export interface AssistantPendingAction {
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  description: string;
+}
+
+export interface AssistantChatResponse {
+  reply: string;
+  pending_action: AssistantPendingAction | null;
+  // Opaque — just store whatever this is and echo it back as `history` on
+  // the next request. Don't try to interpret its contents.
+  messages: Record<string, unknown>[];
+}
+
+export interface AssistantConfirmResponse {
+  reply: string;
+  success: boolean;
+  result: Record<string, unknown> | null;
+}
+
 export interface Sport {
   id: number;
   code: string;

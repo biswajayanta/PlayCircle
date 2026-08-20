@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # Defaults to "*" for local dev convenience; set a real value in production.
     CORS_ORIGINS_RAW: str = Field(default="*", alias="PLAYCIRCLE_CORS_ORIGINS")
 
+    # For the in-app assistant (app/routers/assistant.py). Empty by default
+    # so the app still starts without it configured — the assistant
+    # endpoints just fail with a clear auth error from OpenAI until it's set.
+    OPENAI_API_KEY: str = ""
+
     @property
     def CORS_ORIGINS(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS_RAW.split(",") if origin.strip()]

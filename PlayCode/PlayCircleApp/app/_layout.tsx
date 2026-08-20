@@ -4,6 +4,7 @@ import { ActivityIndicator, View } from 'react-native';
 
 import { AuthProvider, useAuth } from '../lib/authContext';
 import Watermark from '../components/Watermark';
+import AssistantBubble from '../components/AssistantBubble';
 
 function RootNavigator() {
   const { user, loading } = useAuth();
@@ -64,6 +65,7 @@ function RootNavigator() {
         <Stack.Screen name="matches/[matchId]/index" options={{ title: 'Live Score' }} />
       </Stack>
       {!inAuthScreen && <Watermark />}
+      {!inAuthScreen && <AssistantBubble />}
     </View>
   );
 }

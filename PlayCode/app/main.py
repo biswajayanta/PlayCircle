@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db import connect_db, disconnect_db
-from app.routers import auth, circles, expenses, games, health, matches, posts, reports, settlements, sports, treasury, users, venues
+from app.routers import auth, circles, expenses, games, health, matches, posts, reports, settlements, sports, treasury, users, venues, assistant
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
 
@@ -41,3 +41,4 @@ app.include_router(settlements.router)
 app.include_router(posts.router)
 app.include_router(reports.router)
 app.include_router(treasury.router)
+app.include_router(assistant.router)

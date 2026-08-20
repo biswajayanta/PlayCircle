@@ -4,6 +4,7 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, View 
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
+import { subscribeToDataChanged } from '../../../lib/assistantEvents';
 import { MatchDetail } from '../../../lib/types';
 
 function teamNames(match: MatchDetail, team: number): string {
@@ -70,6 +71,14 @@ export default function MatchScoreScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    return subscribeToDataChanged((event) => {
+      if (event.entityType === 'match' && event.entityId === matchId) {
+        load();
+      }
+    });
+  }, [matchId, load]);
 
   async function handlePoint(team: 1 | 2, points: number = 1) {
     if (!matchId || scoring) return;
