@@ -94,10 +94,13 @@ async def test_scoring_a_point_updates_the_score(
         headers=auth_headers(circle_owner["token"]),
     )
     assert point_resp.status_code == 200
-    assert point_resp.json()["score"]["team_1"] == 1
+    # A single rally doesn't close a set, so sets-won (team_1) stays 0 —
+    # it's the current set's live tally that actually moved.
+    assert point_resp.json()["score"]["team_1"] == 0
+    assert point_resp.json()["score"]["current_set_team_1"] == 1
 
 
-async def test_pickleball_match_auto_completes_at_11_win_by_2(
+async def test_pickleball_match_completes_after_all_sets_played(
     client, circle_owner, a_venue, signed_up_user
 ):
     game = await _game_with_two_players(client, circle_owner, a_venue, signed_up_user)
@@ -115,13 +118,21 @@ async def test_pickleball_match_auto_completes_at_11_win_by_2(
     match_id = match_resp.json()["id"]
 
     last = None
-    for _ in range(11):
-        last = await client.post(
-            f"/matches/{match_id}/points",
-            json={"team": 1},
-            headers=auth_headers(circle_owner["token"]),
-        )
-    assert last.json()["score"]["team_1"] == 11
+    for set_num in range(3):  # default num_sets=3, all always played
+        for _ in range(11):
+            last = await client.post(
+                f"/matches/{match_id}/points",
+                json={"team": 1},
+                headers=auth_headers(circle_owner["token"]),
+            )
+        if set_num < 2:
+            # Team 1 already has an insurmountable lead after set 1, but
+            # every configured set is always played — no early stop.
+            assert last.json()["status"] == "in_progress"
+            assert last.json()["score"]["team_1"] == set_num + 1
+
+    assert last.json()["score"]["team_1"] == 3
+    assert last.json()["score"]["team_2"] == 0
     assert last.json()["status"] == "completed"
 
     detail = await client.get(
@@ -149,20 +160,25 @@ async def test_undo_reopens_a_completed_match(
         headers=auth_headers(circle_owner["token"]),
     )
     match_id = match_resp.json()["id"]
-    for _ in range(11):
+    last = None
+    for _ in range(33):  # 3 sets x 11 points, all to team 1
         last = await client.post(
             f"/matches/{match_id}/points",
             json={"team": 1},
             headers=auth_headers(circle_owner["token"]),
         )
     assert last.json()["status"] == "completed"
+    assert last.json()["score"]["team_1"] == 3
 
     undo = await client.post(
         f"/matches/{match_id}/undo", headers=auth_headers(circle_owner["token"])
     )
     assert undo.status_code == 200
     assert undo.json()["status"] == "in_progress"
-    assert undo.json()["score"]["team_1"] == 10
+    # The undone point is the one that just closed set 3 — that set
+    # reopens with 10 points instead of counting as a win.
+    assert undo.json()["score"]["team_1"] == 2
+    assert undo.json()["score"]["current_set_team_1"] == 10
 
 
 async def test_doubles_match_requires_2v2(client, circle_owner, a_venue, signed_up_user):

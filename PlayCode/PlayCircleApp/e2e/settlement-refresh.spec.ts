@@ -28,10 +28,12 @@ test('settlement plan updates immediately after adding an expense, no navigation
   await page.getByText('+ New Game', { exact: true }).click();
   await page.waitForTimeout(500);
 
-  // Venue is a real <select> dropdown now — use selectOption, not a click
-  // on the option text (which isn't independently visible/clickable while
-  // the native dropdown is closed).
-  await page.locator('select').selectOption({ label: 'HSR Layout Pickleball Courts' });
+  // Sport tab is the default view — pick Pickleball, then the matching
+  // venue card that appears below it, before date/time show up.
+  await page.getByText('Pickleball', { exact: true }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByText('HSR Layout Pickleball Courts', { exact: true }).click();
+  await page.waitForTimeout(300);
   await page.locator('input[type="date"]').fill('2026-12-20');
   await page.locator('input[type="time"]').fill('18:00');
   await page.getByText('Create', { exact: true }).last().click();

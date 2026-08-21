@@ -16,6 +16,12 @@ class MatchCreate(BaseModel):
     format: str = Field(..., pattern="^(singles|doubles)$")
     started_at: datetime | None = None  # defaults to now() if omitted
     participants: list[MatchParticipantIn] = Field(..., min_length=2)
+    # Per-match overrides for sports with configurable rules. Sports that
+    # don't use a given field simply ignore it. None means "use the
+    # sport's default from core.sports.scoring_config".
+    points_to_win: int | None = Field(default=None, ge=1)  # Carrom's board target, or Pickleball's points per set
+    max_boards: int | None = Field(default=None, ge=1)  # Carrom only
+    num_sets: int | None = Field(default=None, ge=1)  # Pickleball only
 
     @field_validator("participants")
     @classmethod
@@ -31,6 +37,9 @@ class MatchCreate(BaseModel):
 
 class RecordPoint(BaseModel):
     team: int = Field(..., ge=1, le=2)
+    # Defaults to 1 (pickleball's rally scoring, unchanged). Carrom sends
+    # the actual board score here instead.
+    points: int = Field(default=1, ge=1)
 
 
 class MatchParticipantResult(BaseModel):

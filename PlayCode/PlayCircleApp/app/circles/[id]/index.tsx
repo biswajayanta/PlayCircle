@@ -1,12 +1,13 @@
 import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,7 +16,8 @@ import {
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
-import { Circle, Game, Venue } from '../../../lib/types';
+import { subscribeToDataChanged } from '../../../lib/assistantEvents';
+import { Circle, Game, Sport, Venue } from '../../../lib/types';
 
 // Plain CSS-in-JS for the raw <input type="datetime-local"> used on web —
 // this isn't a React Native style object, it's real DOM CSS properties.
@@ -38,6 +40,15 @@ const STATUS_COLORS: Record<Game['status'], { bg: string; text: string }> = {
   completed: { bg: '#EDEDED', text: '#5F5F5F' },
   cancelled: { bg: '#EDEDED', text: '#5F5F5F' },
 };
+
+// Cosmetic only — reads scoring_config directly so this works automatically
+// for any future sport with recognizable keys, no per-sport map to maintain.
+function formatSportBlurb(sport: Sport): string | null {
+  const cfg = sport.scoring_config as { win_score?: number; win_by?: number };
+  if (cfg.win_score && cfg.win_by) return `Rally to ${cfg.win_score}, win by ${cfg.win_by}`;
+  if (cfg.win_score) return `Race to ${cfg.win_score}`;
+  return null;
+}
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : String(n);
@@ -99,11 +110,16 @@ export default function CircleDetailScreen() {
   const [circle, setCircle] = useState<Circle | null>(null);
   const [games, setGames] = useState<Game[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
+  const [sports, setSports] = useState<Sport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [pickerTab, setPickerTab] = useState<'sport' | 'venue'>('sport');
+  const [selectedSport, setSelectedSport] = useState<Sport | null>(null);
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
+  const [venueSearchQuery, setVenueSearchQuery] = useState('');
+  const [dateTimeModalOpen, setDateTimeModalOpen] = useState(false);
   const [dateInput, setDateInput] = useState('');
   const [timeInput, setTimeInput] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -116,14 +132,18 @@ export default function CircleDetailScreen() {
     if (!id) return;
     setError(null);
     try {
-      const [circleResult, gamesResult, venuesResult] = await Promise.all([
+      const [circleResult, gamesResult, venuesResult, sportsResult] = await Promise.all([
         api.get<Circle>(`/circles/${id}`),
         api.get<Game[]>(`/games?circle_id=${id}`),
         api.get<Venue[]>('/venues'),
+        api.get<Sport[]>('/sports'),
       ]);
       setCircle(circleResult);
       setGames(gamesResult);
       setVenues(venuesResult);
+      // Badminton has no scoring engine yet — hide it from selection until
+      // one exists. Remove this filter once app/scoring/badminton.py lands.
+      setSports(sportsResult.filter((s) => s.code !== 'badminton'));
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -141,6 +161,14 @@ export default function CircleDetailScreen() {
     }, [load])
   );
 
+  useEffect(() => {
+    return subscribeToDataChanged((event) => {
+      if (event.entityType === 'circle' && event.entityId === id) {
+        load();
+      }
+    });
+  }, [id, load]);
+
   // Android dismisses the picker itself and reports event.type; iOS keeps it
   // open inline, so we only close it here on Android after a real selection.
   function onNativeDateChange(event: DateTimePickerEvent, selected?: Date) {
@@ -154,7 +182,7 @@ export default function CircleDetailScreen() {
   }
 
   async function handleCreateGame() {
-    if (!id || !selectedVenue) return;
+    if (!id || !selectedSport || !selectedVenue) return;
     if (!dateInput || !timeInput) {
       showAlert('Missing date or time', 'Pick both a date and a time for the game.');
       return;
@@ -168,13 +196,17 @@ export default function CircleDetailScreen() {
     try {
       const created = await api.post<Game>('/games', {
         circle_id: id,
-        sport_id: selectedVenue.sport_id,
+        sport_id: selectedSport.id,
         venue_id: selectedVenue.id,
         scheduled_at: scheduledAt.toISOString(),
       });
       setGames((prev) => [...prev, created].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at)));
       setCreateOpen(false);
+      setDateTimeModalOpen(false);
+      setSelectedSport(null);
       setSelectedVenue(null);
+      setPickerTab('sport');
+      setVenueSearchQuery('');
       setDateInput('');
       setTimeInput('');
     } catch (err) {
@@ -239,7 +271,19 @@ export default function CircleDetailScreen() {
       )}
 
       <View style={styles.actionRow}>
-        <Pressable style={styles.newGameButton} onPress={() => setCreateOpen(true)}>
+        <Pressable
+          style={styles.newGameButton}
+          onPress={() => {
+            setSelectedSport(null);
+            setSelectedVenue(null);
+            setPickerTab('sport');
+            setVenueSearchQuery('');
+            setDateTimeModalOpen(false);
+            setDateInput('');
+            setTimeInput('');
+            setCreateOpen(true);
+          }}
+        >
           <Text style={styles.newGameButtonText}>+ New Game</Text>
         </Pressable>
         <Pressable
@@ -325,53 +369,205 @@ export default function CircleDetailScreen() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>New Game</Text>
 
-            <Text style={styles.fieldLabel}>Venue</Text>
-            {Platform.OS === 'web' ? (
-              React.createElement(
-                'select',
-                {
-                  value: selectedVenue ? String(selectedVenue.id) : '',
-                  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => {
-                    const venue = venues.find((v) => String(v.id) === e.target.value) ?? null;
-                    setSelectedVenue(venue);
-                  },
-                  style: webDateInputStyle,
-                },
-                [
-                  React.createElement(
-                    'option',
-                    { key: '', value: '', disabled: true },
-                    'Choose a venue...'
-                  ),
-                  ...venues.map((v) =>
-                    React.createElement('option', { key: v.id, value: String(v.id) }, v.name)
-                  ),
-                ]
-              )
-            ) : (
-              <FlatList
-                data={venues}
-                keyExtractor={(v) => String(v.id)}
-                style={styles.venueList}
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={[
-                      styles.venueOption,
-                      selectedVenue?.id === item.id && styles.venueOptionSelected,
-                    ]}
-                    onPress={() => setSelectedVenue(item)}
-                  >
-                    <Text
-                      style={[
-                        styles.venueOptionText,
-                        selectedVenue?.id === item.id && styles.venueOptionTextSelected,
-                      ]}
+            <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={styles.tabRow}>
+              <Pressable
+                style={[styles.tabButton, pickerTab === 'sport' && styles.tabButtonActive]}
+                onPress={() => {
+                  setPickerTab('sport');
+                  setVenueSearchQuery('');
+                }}
+              >
+                <Text style={[styles.tabButtonText, pickerTab === 'sport' && styles.tabButtonTextActive]}>
+                  Sport
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.tabButton, pickerTab === 'venue' && styles.tabButtonActive]}
+                onPress={() => {
+                  setPickerTab('venue');
+                  setVenueSearchQuery('');
+                }}
+              >
+                <Text style={[styles.tabButtonText, pickerTab === 'venue' && styles.tabButtonTextActive]}>
+                  Venue
+                </Text>
+              </Pressable>
+            </View>
+
+            {pickerTab === 'sport' ? (
+              <>
+                <Text style={styles.fieldLabel}>Choose a sport</Text>
+                <View style={styles.cardGrid}>
+                  {sports.map((sport) => (
+                    <Pressable
+                      key={sport.id}
+                      style={[styles.pickCard, selectedSport?.id === sport.id && styles.pickCardSelected]}
+                      onPress={() => {
+                        setSelectedSport(sport);
+                        if (selectedVenue && !selectedVenue.sport_ids.includes(sport.id)) {
+                          // Doesn't host this sport — clear it rather than
+                          // leave a stale, invalid pairing.
+                          setSelectedVenue(null);
+                        } else if (selectedVenue) {
+                          // Venue was already compatible — both sides of
+                          // the pair are now set, so move straight to
+                          // date/time instead of leaving it buried below.
+                          setDateTimeModalOpen(true);
+                        }
+                      }}
                     >
-                      {item.name}
-                    </Text>
-                  </Pressable>
+                      <Text style={styles.pickCardTitle}>{sport.name}</Text>
+                      <Text style={styles.pickCardMeta}>
+                        {sport.indoor_outdoor} · {sport.min_players}-{sport.max_players} players
+                      </Text>
+                      {formatSportBlurb(sport) && (
+                        <Text style={styles.pickCardBlurb}>{formatSportBlurb(sport)}</Text>
+                      )}
+                    </Pressable>
+                  ))}
+                </View>
+
+                {selectedSport && (
+                  <>
+                    <Text style={styles.fieldLabel}>Venue</Text>
+                    {venues.filter((v) => v.sport_ids.includes(selectedSport.id)).length > 4 && (
+                      <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search venues..."
+                        placeholderTextColor="#9AA69E"
+                        value={venueSearchQuery}
+                        onChangeText={setVenueSearchQuery}
+                      />
+                    )}
+                    <View style={styles.cardGrid}>
+                      {venues
+                        .filter((v) => v.sport_ids.includes(selectedSport.id))
+                        .filter((v) => v.name.toLowerCase().includes(venueSearchQuery.toLowerCase()))
+                        .map((venue) => (
+                          <Pressable
+                            key={venue.id}
+                            style={[styles.pickCard, selectedVenue?.id === venue.id && styles.pickCardSelected]}
+                            onPress={() => {
+                              setSelectedVenue(venue);
+                              // This list is already filtered to venues that
+                              // host the selected sport, so the pair is
+                              // complete the moment a venue is tapped here.
+                              setDateTimeModalOpen(true);
+                            }}
+                          >
+                            <Text style={styles.pickCardTitle}>{venue.name}</Text>
+                            {venue.address && <Text style={styles.pickCardMeta}>{venue.address}</Text>}
+                          </Pressable>
+                        ))}
+                      {venues.filter((v) => v.sport_ids.includes(selectedSport.id)).length === 0 && (
+                        <Text style={styles.emptyStateText}>
+                          No venues host {selectedSport.name} yet.
+                        </Text>
+                      )}
+                    </View>
+                  </>
                 )}
-              />
+              </>
+            ) : (
+              <>
+                <Text style={styles.fieldLabel}>Choose a venue</Text>
+                {venues.length > 4 && (
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search venues..."
+                    placeholderTextColor="#9AA69E"
+                    value={venueSearchQuery}
+                    onChangeText={setVenueSearchQuery}
+                  />
+                )}
+                <View style={styles.cardGrid}>
+                  {venues
+                    .filter((v) => v.name.toLowerCase().includes(venueSearchQuery.toLowerCase()))
+                    .map((venue) => (
+                      <Pressable
+                        key={venue.id}
+                        style={[styles.pickCard, selectedVenue?.id === venue.id && styles.pickCardSelected]}
+                        onPress={() => {
+                          setSelectedVenue(venue);
+                          if (selectedSport && !venue.sport_ids.includes(selectedSport.id)) {
+                            setSelectedSport(null);
+                          } else if (selectedSport) {
+                            setDateTimeModalOpen(true);
+                          }
+                        }}
+                      >
+                        <Text style={styles.pickCardTitle}>{venue.name}</Text>
+                        {venue.address && <Text style={styles.pickCardMeta}>{venue.address}</Text>}
+                        <Text style={styles.pickCardBlurb}>
+                          {sports
+                            .filter((s) => venue.sport_ids.includes(s.id))
+                            .map((s) => s.name)
+                            .join(' · ')}
+                        </Text>
+                      </Pressable>
+                    ))}
+                </View>
+
+                {selectedVenue && (
+                  <>
+                    <Text style={styles.fieldLabel}>Sport</Text>
+                    <View style={styles.cardGrid}>
+                      {sports
+                        .filter((s) => selectedVenue.sport_ids.includes(s.id))
+                        .map((sport) => (
+                          <Pressable
+                            key={sport.id}
+                            style={[styles.pickCard, selectedSport?.id === sport.id && styles.pickCardSelected]}
+                            onPress={() => {
+                              setSelectedSport(sport);
+                              // Venue is already selected and this list is
+                              // pre-filtered to sports it hosts, so tapping
+                              // here always completes the pair.
+                              setDateTimeModalOpen(true);
+                            }}
+                          >
+                            <Text style={styles.pickCardTitle}>{sport.name}</Text>
+                            {formatSportBlurb(sport) && (
+                              <Text style={styles.pickCardBlurb}>{formatSportBlurb(sport)}</Text>
+                            )}
+                          </Pressable>
+                        ))}
+                    </View>
+                  </>
+                )}
+              </>
+            )}
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalCancelButton}
+                onPress={() => setCreateOpen(false)}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </Pressable>
+              {selectedSport && selectedVenue && (
+                <Pressable
+                  style={styles.modalCreateButton}
+                  onPress={() => setDateTimeModalOpen(true)}
+                >
+                  <Text style={styles.modalCreateButtonText}>Next: Date &amp; Time</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={dateTimeModalOpen} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>When?</Text>
+            {selectedSport && selectedVenue && (
+              <Text style={styles.dateTimeSummary}>
+                {selectedSport.name} at {selectedVenue.name}
+              </Text>
             )}
 
             <Text style={styles.fieldLabel}>Date</Text>
@@ -431,18 +627,18 @@ export default function CircleDetailScreen() {
             <View style={styles.modalActions}>
               <Pressable
                 style={styles.modalCancelButton}
-                onPress={() => setCreateOpen(false)}
+                onPress={() => setDateTimeModalOpen(false)}
               >
-                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                <Text style={styles.modalCancelButtonText}>Back</Text>
               </Pressable>
               <Pressable
                 style={[
                   styles.modalCreateButton,
-                  (!selectedVenue || !dateInput || !timeInput || creating) &&
+                  (!selectedSport || !selectedVenue || !dateInput || !timeInput || creating) &&
                     styles.joinButtonDisabled,
                 ]}
                 onPress={handleCreateGame}
-                disabled={!selectedVenue || !dateInput || !timeInput || creating}
+                disabled={!selectedSport || !selectedVenue || !dateInput || !timeInput || creating}
               >
                 <Text style={styles.modalCreateButtonText}>
                   {creating ? 'Creating...' : 'Create'}
@@ -732,6 +928,88 @@ const styles = StyleSheet.create({
   },
   venueList: {
     maxHeight: 140,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F4F1',
+    borderRadius: 10,
+    padding: 4,
+    gap: 4,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  tabButtonActive: {
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  tabButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7A73',
+  },
+  tabButtonTextActive: {
+    color: '#1F6F50',
+  },
+  cardGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  pickCard: {
+    minWidth: '47%',
+    flexGrow: 1,
+    borderWidth: 1.5,
+    borderColor: '#E7ECE9',
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: '#fff',
+  },
+  pickCardSelected: {
+    borderColor: '#1F6F50',
+    backgroundColor: '#F0F8F4',
+  },
+  pickCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#173A2E',
+  },
+  pickCardMeta: {
+    fontSize: 12,
+    color: '#6B7A73',
+    marginTop: 2,
+  },
+  pickCardBlurb: {
+    fontSize: 11,
+    color: '#8A968F',
+    marginTop: 4,
+  },
+  emptyStateText: {
+    fontSize: 13,
+    color: '#8A968F',
+    fontStyle: 'italic',
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#D6DED9',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    marginBottom: 10,
+    backgroundColor: '#fff',
+  },
+  dateTimeSummary: {
+    fontSize: 13,
+    color: '#6B7A73',
+    marginBottom: 14,
   },
   searchResultsList: {
     maxHeight: 160,

@@ -10,6 +10,19 @@ export default function GameReportScreen() {
   const [report, setReport] = useState<GameReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedMatchIds, setExpandedMatchIds] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(matchId: string) {
+    setExpandedMatchIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(matchId)) {
+        next.delete(matchId);
+      } else {
+        next.add(matchId);
+      }
+      return next;
+    });
+  }
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -111,6 +124,43 @@ export default function GameReportScreen() {
 
             {m.winning_team && (
               <Text style={styles.winnerLine}>🏆 {m.winning_team.join(' & ')} won</Text>
+            )}
+
+            {m.breakdown && m.breakdown.length > 0 && (
+              <>
+                <Pressable
+                  style={styles.detailsToggle}
+                  onPress={() => toggleExpanded(m.match_id)}
+                >
+                  <Text style={styles.detailsToggleText}>
+                    {expandedMatchIds.has(m.match_id) ? 'Hide details ▲' : 'Show details ▼'}
+                  </Text>
+                </Pressable>
+
+                {expandedMatchIds.has(m.match_id) && (
+                  <View style={styles.breakdownSection}>
+                    {m.breakdown.map((entry, i) => {
+                      if ('winner' in entry) {
+                        // Set-based (Pickleball): {team_1, team_2, winner}
+                        const winnerTeam = entry.winner === 1 ? m.team_1_players : m.team_2_players;
+                        return (
+                          <Text key={i} style={styles.breakdownRow}>
+                            Set {i + 1}: {String(entry.team_1)}–{String(entry.team_2)} →{' '}
+                            {winnerTeam.join(' & ')}
+                          </Text>
+                        );
+                      }
+                      // Board-based (Carrom): {team, points}
+                      const teamPlayers = entry.team === 1 ? m.team_1_players : m.team_2_players;
+                      return (
+                        <Text key={i} style={styles.breakdownRow}>
+                          Board {i + 1}: {teamPlayers.join(' & ')} scored {String(entry.points)}
+                        </Text>
+                      );
+                    })}
+                  </View>
+                )}
+              </>
             )}
           </View>
         ))
@@ -241,5 +291,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1F6F50',
     marginTop: 10,
+  },
+  detailsToggle: {
+    alignSelf: 'center',
+    marginTop: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  detailsToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7A73',
+  },
+  breakdownSection: {
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E7ECE9',
+    paddingTop: 10,
+    gap: 4,
+  },
+  breakdownRow: {
+    fontSize: 12,
+    color: '#6B7A73',
   },
 });

@@ -15,6 +15,7 @@ import {
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
+import { subscribeToDataChanged } from '../../../lib/assistantEvents';
 import { GameDetail, Match, Post, PostDetail, UserMe } from '../../../lib/types';
 
 // Plain CSS-in-JS for the raw <input type="datetime-local"> used on web —
@@ -128,6 +129,20 @@ export default function GameDetailScreen() {
       load();
     }, [load])
   );
+
+  useEffect(() => {
+    return subscribeToDataChanged((event) => {
+      if (
+        (event.entityType === 'game' && event.entityId === id) ||
+        // A match belonging to this game changing (started, scored,
+        // concluded) also affects what this screen shows — the matches
+        // list and the game's own status/counts.
+        (event.entityType === 'match' && matches.some((m) => m.id === event.entityId))
+      ) {
+        load();
+      }
+    });
+  }, [id, matches, load]);
 
   // Android dismisses the picker itself and reports event.type; iOS keeps it
   // open inline, so we only close it here on Android after a real selection.
@@ -324,7 +339,7 @@ export default function GameDetailScreen() {
 
               {isGameOwner && isActive && (
                 <View style={styles.linkRow}>
-                  {!game.is_past && (
+                  {!game.is_past && matches.length === 0 && (
                     <Pressable
                       style={styles.expensesLink}
                       onPress={() => {
@@ -337,12 +352,14 @@ export default function GameDetailScreen() {
                       <Text style={styles.expensesLinkText}>🗓️ Reschedule</Text>
                     </Pressable>
                   )}
-                  <Pressable
-                    style={styles.cancelLink}
-                    onPress={() => setCancelConfirmOpen(true)}
-                  >
-                    <Text style={styles.cancelLinkText}>✕ Cancel game</Text>
-                  </Pressable>
+                  {matches.length === 0 && !(game.has_expenses && !game.all_settled) && (
+                    <Pressable
+                      style={styles.cancelLink}
+                      onPress={() => setCancelConfirmOpen(true)}
+                    >
+                      <Text style={styles.cancelLinkText}>✕ Cancel game</Text>
+                    </Pressable>
+                  )}
                 </View>
               )}
 
@@ -366,10 +383,19 @@ export default function GameDetailScreen() {
               )}
               {isActive && !game.is_past && (
                 <Pressable
-                  style={styles.startMatchButton}
-                  onPress={() => router.push(`/games/${id}/new-match`)}
+                  style={[
+                    styles.startMatchButton,
+                    game.confirmed_count < 2 && styles.disabledButton,
+                  ]}
+                  onPress={() => {
+                    if (game.confirmed_count < 2) return;
+                    router.push(`/games/${id}/new-match`);
+                  }}
+                  disabled={game.confirmed_count < 2}
                 >
-                  <Text style={styles.startMatchButtonText}>+ Start Match</Text>
+                  <Text style={styles.startMatchButtonText}>
+                    {game.confirmed_count < 2 ? 'Need 2+ players to start' : '+ Start Match'}
+                  </Text>
                 </Pressable>
               )}
             </View>
@@ -663,6 +689,7 @@ const styles = StyleSheet.create({
   },
   linkRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginTop: 12,
   },

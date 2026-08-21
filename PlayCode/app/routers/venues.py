@@ -1,7 +1,9 @@
 """
-Second practice endpoint — same pattern as sports.py, but adds one new
-thing: an optional query parameter (?sport=pickleball) to filter results.
-This is the natural next step up from a plain "return everything" endpoint.
+Second practice endpoint — same pattern as sports.py. Since a venue can now
+host more than one sport (core.venue_sports, a many-to-many join table),
+this returns each venue's full list of sport_ids, and supports an optional
+?sport=<code> filter that matches venues hosting that sport specifically
+without dropping their other sports from the response.
 """
 
 from fastapi import APIRouter, Query
@@ -14,34 +16,33 @@ router = APIRouter(prefix="/venues", tags=["venues"])
 @router.get("", response_model=list[Venue])
 async def list_venues(sport: str | None = Query(default=None, description="Filter by sport code, e.g. 'pickleball'")):
     pool = get_pool()
-    async with pool.acquire() as conn:
-        if sport:
-            rows = await conn.fetch(
-                """
-                SELECT v.id, v.sport_id, v.name, v.address, v.city,
-                       v.latitude, v.longitude, v.is_active
-                FROM core.venues v
-                JOIN core.sports s ON s.id = v.sport_id
-                WHERE v.is_active = true AND s.code = $1
-                ORDER BY v.name
-                """,
-                sport,
-            )
-        else:
-            rows = await conn.fetch(
-                """
-                SELECT id, sport_id, name, address, city,
-                       latitude, longitude, is_active
-                FROM core.venues
-                WHERE is_active = true
-                ORDER BY name
-                """
-            )
+    rows = await pool.fetch(
+        """
+        SELECT v.id, v.name, v.address, v.city, v.latitude, v.longitude, v.is_active,
+               (
+                   SELECT array_agg(vs.sport_id ORDER BY vs.sport_id)
+                   FROM core.venue_sports vs
+                   WHERE vs.venue_id = v.id
+               ) AS sport_ids
+        FROM core.venues v
+        WHERE v.is_active = true
+          AND (
+              $1::text IS NULL
+              OR EXISTS (
+                  SELECT 1 FROM core.venue_sports vs
+                  JOIN core.sports s ON s.id = vs.sport_id
+                  WHERE vs.venue_id = v.id AND s.code = $1
+              )
+          )
+        ORDER BY v.name
+        """,
+        sport,
+    )
 
     return [
         Venue(
             id=r["id"],
-            sport_id=r["sport_id"],
+            sport_ids=list(r["sport_ids"]) if r["sport_ids"] else [],
             name=r["name"],
             address=r["address"],
             city=r["city"],

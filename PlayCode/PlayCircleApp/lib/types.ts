@@ -55,9 +55,47 @@ export interface GameDetail extends Game {
   participants: GameParticipant[];
 }
 
+export interface AssistantContext {
+  circle_id?: string;
+  game_id?: string;
+  match_id?: string;
+}
+
+export interface AssistantPendingAction {
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  description: string;
+}
+
+export interface AssistantChatResponse {
+  reply: string;
+  pending_action: AssistantPendingAction | null;
+  // Opaque — just store whatever this is and echo it back as `history` on
+  // the next request. Don't try to interpret its contents.
+  messages: Record<string, unknown>[];
+}
+
+export interface AssistantConfirmResponse {
+  reply: string;
+  success: boolean;
+  result: Record<string, unknown> | null;
+}
+
+export interface Sport {
+  id: number;
+  code: string;
+  name: string;
+  indoor_outdoor: 'indoor' | 'outdoor' | 'both';
+  min_players: number;
+  max_players: number;
+  scoring_config: Record<string, unknown>;
+  calorie_coefficient: number;
+  is_active: boolean;
+}
+
 export interface Venue {
   id: number;
-  sport_id: number;
+  sport_ids: number[];
   name: string;
   address: string | null;
   city: string | null;
@@ -125,9 +163,20 @@ export interface ExpenseDetail extends Expense {
   splits: ExpenseSplit[];
 }
 export interface MatchScore {
-  history: number[];
+  // number[] for rally-scored sports (Pickleball, within a set); {team,
+  // points}[] for board-scored sports (Carrom) — shape is sport-specific,
+  // nothing outside the backend engine and this screen inspects entries.
+  history: unknown[];
   team_1: number;
   team_2: number;
+  config?: { points_to_win?: number; win_by?: number; max_boards?: number | null; num_sets?: number };
+  boards_played?: number;
+  // Set-based sports only (Pickleball): completed sets, plus the set
+  // currently being played.
+  sets?: { team_1: number; team_2: number; winner: number; history: number[] }[];
+  current_set_history?: number[];
+  current_set_team_1?: number;
+  current_set_team_2?: number;
 }
 
 export interface MatchParticipant {
@@ -196,6 +245,10 @@ export interface MatchSummary {
   team_1_score: number;
   team_2_score: number;
   winning_team: string[] | null;
+  // Per-set detail ({team_1,team_2,winner}[]) or per-board detail
+  // ({team,points}[]), depending on the sport. Absent for sports with
+  // nothing to drill into.
+  breakdown?: Record<string, unknown>[] | null;
 }
 
 export interface GameReport {

@@ -39,6 +39,10 @@ os.environ["PLAYCIRCLE_PASSWORD"] = os.environ.get("PLAYCIRCLE_PASSWORD", "Maddy
 os.environ["PLAYCIRCLE_NAME"] = TEST_DB_NAME
 os.environ["PLAYCIRCLE_JWT_SECRET_KEY"] = "test-only-secret-not-for-real-use"
 
+# Set by _build_test_database's _seed() step below, read by the a_venue
+# fixture further down. Module-level so it survives outside that closure.
+PICKLEBALL_SPORT_ID = None
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _build_test_database():
@@ -81,14 +85,29 @@ def _build_test_database():
     async def _seed():
         conn = await asyncpg.connect(**admin_dsn_parts, database=TEST_DB_NAME)
         try:
+            # The migration chain itself now creates the pickleball row
+            # (with code/indoor_outdoor/etc. filled in) — look it up rather
+            # than inserting a second, incomplete one.
             sport_id = await conn.fetchval(
-                "INSERT INTO core.sports (name) VALUES ('pickleball') RETURNING id"
+                "SELECT id FROM core.sports WHERE lower(name) = 'pickleball'"
+            )
+            if sport_id is None:
+                raise RuntimeError(
+                    "No pickleball row found after migrations ran — "
+                    "expected the migration chain to have created one."
+                )
+            global PICKLEBALL_SPORT_ID
+            PICKLEBALL_SPORT_ID = sport_id
+            venue_id = await conn.fetchval(
+                """
+                INSERT INTO core.venues (name, address, city)
+                VALUES ('Test Court', '1 Test Street', 'Bengaluru')
+                RETURNING id
+                """
             )
             await conn.execute(
-                """
-                INSERT INTO core.venues (sport_id, name, address, city)
-                VALUES ($1, 'Test Court', '1 Test Street', 'Bengaluru')
-                """,
+                "INSERT INTO core.venue_sports (venue_id, sport_id) VALUES ($1, $2)",
+                venue_id,
                 sport_id,
             )
         finally:
@@ -174,14 +193,23 @@ async def circle_owner(client, unique):
 
 @pytest_asyncio.fixture
 async def a_venue(client, circle_owner):
-    """The first available venue — seed data (pickleball sport + venues)
-    must already exist in the test DB. If this fixture fails, the DB
-    wasn't seeded — see seed_test_data() below."""
+    """The Pickleball test venue specifically — not just 'the first venue',
+    since other sports (e.g. Carrom) are now also seeded via the migration
+    chain itself and may land with a lower id depending on seed order.
+    Filtering by the known pickleball sport_id keeps this fixture correct
+    regardless of how many other sports/venues exist."""
     resp = await client.get("/venues", headers=auth_headers(circle_owner["token"]))
     assert resp.status_code == 200, resp.text
     venues = resp.json()
-    assert len(venues) > 0, (
-        "No venues found — the test database needs seed data. "
+    pickleball_venues = [v for v in venues if PICKLEBALL_SPORT_ID in v["sport_ids"]]
+    assert len(pickleball_venues) > 0, (
+        "No pickleball venue found — the test database needs seed data. "
         "Run the seed step before the test suite."
     )
-    return venues[0]
+    venue = pickleball_venues[0]
+    # Convenience key for existing test files that build request payloads
+    # with venue['sport_id'] directly — a_venue is always filtered to a
+    # pickleball venue, so this is unambiguous even though the real API
+    # response only has sport_ids now.
+    venue["sport_id"] = PICKLEBALL_SPORT_ID
+    return venue
