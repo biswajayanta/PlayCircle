@@ -48,17 +48,18 @@ async def propagate_winner(conn, tournament_match_id: uuid.UUID, winner_user_id:
             winner_user_id,
             next_row["id"],
         )
-        other_player = next_row["player_2_user_id"]
     else:
         await conn.execute(
             "UPDATE social.tournament_matches SET player_2_user_id = $1 WHERE id = $2",
             winner_user_id,
             next_row["id"],
         )
-        other_player = next_row["player_1_user_id"]
 
-    if other_player is not None:
-        await conn.execute(
-            "UPDATE social.tournament_matches SET status = 'ready' WHERE id = $1",
-            next_row["id"],
-        )
+    # A slot is startable the instant EITHER side is known now — the other
+    # side stays a TBD opponent, resolved via walkover if the match gets
+    # started before it fills in. This matches Round 1's TBD mechanic
+    # uniformly across every round, not just the first.
+    await conn.execute(
+        "UPDATE social.tournament_matches SET status = 'ready' WHERE id = $1",
+        next_row["id"],
+    )

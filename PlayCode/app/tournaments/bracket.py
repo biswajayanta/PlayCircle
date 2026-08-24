@@ -5,13 +5,14 @@ every social.tournament_matches row to insert. Keeping this separate from
 the router makes the bracket math independently testable, the same way the
 sport scoring engines are kept separate from their routers.
 
-Bye placement is mechanical, not seeding-aware: real head-to-head matches
-are filled first, then remaining players each get a bye. This guarantees no
-two byes ever face each other (which would be an unplayable match), but it
-does NOT try to protect top seeds from meeting early the way tournament-
-standard bracket seeding does. Reasonable simplification for v1.
+Byes are NOT resolved at generation time. A round with an odd player out
+just gets a slot with player_2 left null (a "TBD" opponent) and status
+'ready' — startable immediately, but also editable: a new participant can
+fill that TBD slot right up until someone actually starts it. The bye only
+becomes a real win the moment the match is actually started with the
+opponent still TBD — see start_tournament_match in the router, which is
+where that resolution actually happens, not here.
 """
-import math
 import random
 import uuid
 from typing import Any
@@ -29,15 +30,12 @@ def build_bracket(participant_ids: list[uuid.UUID], randomize: bool) -> list[dic
     bracket_size = 1
     while bracket_size < n:
         bracket_size *= 2
-    total_rounds = int(math.log2(bracket_size))
+    total_rounds = _log2(bracket_size)
     num_first_round_matches = bracket_size // 2
     num_byes = bracket_size - n
     num_real_matches = num_first_round_matches - num_byes
 
     rows: list[dict[str, Any]] = []
-    # Keyed "{round-2 slot index}_{p1|p2}" -> the player advancing into it
-    # from a round-1 bye, so round 2 can be pre-filled where applicable.
-    round2_incoming: dict[str, uuid.UUID] = {}
 
     idx = 0
     for match_pos in range(num_first_round_matches):
@@ -53,6 +51,8 @@ def build_bracket(participant_ids: list[uuid.UUID], randomize: bool) -> list[dic
                 "status": "ready",
             })
         else:
+            # Odd player out — a TBD opponent slot, not an auto-resolved
+            # bye. Startable as-is, but a new joiner can also fill it.
             p1 = players[idx]
             idx += 1
             rows.append({
@@ -60,28 +60,34 @@ def build_bracket(participant_ids: list[uuid.UUID], randomize: bool) -> list[dic
                 "position_in_round": match_pos,
                 "player_1_user_id": p1,
                 "player_2_user_id": None,
-                "winner_user_id": p1,
-                "status": "walkover",
+                "winner_user_id": None,
+                "status": "ready",
             })
-            next_pos = match_pos // 2
-            slot = "p1" if match_pos % 2 == 0 else "p2"
-            round2_incoming[f"{next_pos}_{slot}"] = p1
 
+    # Every later round starts fully empty and pending — nothing propagates
+    # in until a real round-1 (or later) match actually gets started,
+    # whether that's a genuine two-player match or a TBD walkover.
     for round_number in range(2, total_rounds + 1):
         matches_this_round = bracket_size // (2 ** round_number)
         for match_pos in range(matches_this_round):
-            p1 = round2_incoming.get(f"{match_pos}_p1") if round_number == 2 else None
-            p2 = round2_incoming.get(f"{match_pos}_p2") if round_number == 2 else None
             rows.append({
                 "round_number": round_number,
                 "position_in_round": match_pos,
-                "player_1_user_id": p1,
-                "player_2_user_id": p2,
+                "player_1_user_id": None,
+                "player_2_user_id": None,
                 "winner_user_id": None,
-                "status": "ready" if (p1 and p2) else "pending",
+                "status": "pending",
             })
 
     return rows
+
+
+def _log2(n: int) -> int:
+    count = 0
+    while n > 1:
+        n //= 2
+        count += 1
+    return count
 
 
 def next_slot(round_number: int, position_in_round: int) -> tuple[int, int, str]:

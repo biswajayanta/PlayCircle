@@ -81,6 +81,46 @@ export interface AssistantConfirmResponse {
   result: Record<string, unknown> | null;
 }
 
+export interface Tournament {
+  id: string;
+  circle_id: string;
+  circle_name: string;
+  sport_id: number;
+  sport_name: string;
+  name: string;
+  creator_user_id: string;
+  format: string;
+  status: 'draft' | 'fixture_set' | 'in_progress' | 'completed' | 'cancelled';
+  game_id: string | null;
+  participant_count: number;
+  created_at: string;
+}
+
+export interface TournamentParticipant {
+  user_id: string;
+  display_name: string;
+  joined_at: string;
+}
+
+export interface TournamentMatch {
+  id: string;
+  round_number: number;
+  position_in_round: number;
+  player_1_user_id: string | null;
+  player_1_display_name: string | null;
+  player_2_user_id: string | null;
+  player_2_display_name: string | null;
+  winner_user_id: string | null;
+  match_id: string | null;
+  status: 'pending' | 'ready' | 'in_progress' | 'completed' | 'walkover';
+}
+
+export interface Bracket {
+  tournament_id: string;
+  total_rounds: number;
+  matches: TournamentMatch[];
+}
+
 export interface Sport {
   id: number;
   code: string;

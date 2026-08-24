@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -7,6 +8,8 @@ from pydantic import BaseModel, Field
 class TournamentCreate(BaseModel):
     circle_id: uuid.UUID
     sport_id: int
+    venue_id: int
+    scheduled_at: datetime
     name: str = Field(..., min_length=1, max_length=200)
 
 
@@ -65,6 +68,22 @@ class WalkoverRequest(BaseModel):
     winner_user_id: uuid.UUID
 
 
+class SwapPlayersRequest(BaseModel):
+    match_a_id: uuid.UUID
+    slot_a: Literal["player_1", "player_2"]
+    match_b_id: uuid.UUID
+    slot_b: Literal["player_1", "player_2"]
+
+
 class ScheduleTournamentRequest(BaseModel):
     venue_id: int
     scheduled_at: datetime
+
+
+class StartMatchRequest(BaseModel):
+    # Mirrors MatchCreate's exact same override fields, for the same reason
+    # — a tournament match is just a normal match once it starts, so it
+    # gets the same per-match scoring flexibility as any other match.
+    points_to_win: int | None = Field(default=None, ge=1)
+    max_boards: int | None = Field(default=None, ge=1)
+    num_sets: int | None = Field(default=None, ge=1)
