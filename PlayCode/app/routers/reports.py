@@ -123,6 +123,21 @@ async def get_circle_report(
             circle_id,
         )
 
+        tournament_counts = await conn.fetchrow(
+            """
+            SELECT
+                count(*) FILTER (WHERE status = 'completed') AS tournaments_completed,
+                count(*) FILTER (WHERE status = 'in_progress') AS tournaments_in_progress,
+                count(*) FILTER (WHERE status IN ('draft', 'fixture_set')) AS tournaments_setting_up,
+                count(*) AS tournaments_total
+            FROM social.tournaments
+            WHERE circle_id = $1
+            """,
+            circle_id,
+        )
+        # No 'cancelled' bucket — nothing currently sets that status (no
+        # tournament-cancel endpoint exists yet), so it's dead code for now.
+
         venue_rows = await conn.fetch(
             """
             SELECT v.name AS venue_name, count(*) AS games_count
@@ -144,6 +159,10 @@ async def get_circle_report(
         games_cancelled=game_counts["games_cancelled"],
         games_unplayed_past=game_counts["games_unplayed_past"],
         games_total=game_counts["games_total"],
+        tournaments_completed=tournament_counts["tournaments_completed"],
+        tournaments_in_progress=tournament_counts["tournaments_in_progress"],
+        tournaments_setting_up=tournament_counts["tournaments_setting_up"],
+        tournaments_total=tournament_counts["tournaments_total"],
         total_spent=total_spent,
         venues=[VenueUsage(**dict(r)) for r in venue_rows],
     )

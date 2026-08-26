@@ -79,6 +79,30 @@ export default function CircleReportScreen() {
         </View>
       </View>
 
+      {report.tournaments_total > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Tournaments</Text>
+          <View style={styles.tournamentStatsRow}>
+            <View style={styles.tournamentStatItem}>
+              <Text style={styles.tournamentStatValue}>{report.tournaments_completed}</Text>
+              <Text style={styles.tournamentStatLabel}>Completed</Text>
+            </View>
+            <View style={styles.tournamentStatItem}>
+              <Text style={styles.tournamentStatValue}>{report.tournaments_in_progress}</Text>
+              <Text style={styles.tournamentStatLabel}>In progress</Text>
+            </View>
+            <View style={styles.tournamentStatItem}>
+              <Text style={styles.tournamentStatValue}>{report.tournaments_setting_up}</Text>
+              <Text style={styles.tournamentStatLabel}>Setting up</Text>
+            </View>
+            <View style={styles.tournamentStatItem}>
+              <Text style={styles.tournamentStatValue}>{report.tournaments_total}</Text>
+              <Text style={styles.tournamentStatLabel}>Total</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
       <View style={styles.spendCard}>
         <Text style={styles.spendLabel}>Total spent across all games</Text>
         <Text style={styles.spendValue}>₹{Number(report.total_spent).toFixed(2)}</Text>
@@ -176,6 +200,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7A73',
     marginTop: 2,
+  },
+  tournamentStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  tournamentStatItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  tournamentStatValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#C9971F',
+  },
+  tournamentStatLabel: {
+    fontSize: 11,
+    color: '#6B7A73',
+    marginTop: 2,
+    textAlign: 'center',
   },
   spendCard: {
     backgroundColor: '#1F6F50',

@@ -20,6 +20,10 @@ class CircleReport(BaseModel):
     games_cancelled: int
     games_unplayed_past: int
     games_total: int
+    tournaments_completed: int
+    tournaments_in_progress: int
+    tournaments_setting_up: int
+    tournaments_total: int
     total_spent: Decimal
     venues: list[VenueUsage]
 

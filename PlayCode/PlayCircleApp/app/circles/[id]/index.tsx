@@ -321,6 +321,9 @@ export default function CircleDetailScreen() {
         >
           <Text style={styles.reportButtonText}>💰 Treasury</Text>
         </Pressable>
+        <Pressable style={styles.reportButton} onPress={() => router.push('/search')}>
+          <Text style={styles.reportButtonText}>🔍 Find Member</Text>
+        </Pressable>
       </View>
 
       <View style={styles.listTabRow}>
@@ -879,6 +882,7 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
     marginBottom: 16,
   },

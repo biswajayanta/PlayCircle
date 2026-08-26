@@ -11,8 +11,53 @@ export interface UserMe {
   is_public: boolean;
   show_stats: boolean;
   show_activity: boolean;
+  sports_interest: string | null;
+  age: number | null;
+  age_verified: boolean;
+  height_cm: number | null;
+  height_verified: boolean;
+  weight_kg: number | null;
+  weight_verified: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface Achievement {
+  id: string;
+  sport_id: number;
+  sport_name: string;
+  level: string;
+  event_name: string;
+  rank: string;
+  verified: boolean;
+  created_at: string;
+}
+
+export interface SportPerformance {
+  sport_id: number;
+  sport_name: string;
+  matches_played: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  tournaments_played: number;
+}
+
+export interface UserProfile {
+  user_id: string;
+  display_name: string;
+  avatar_url: string | null;
+  bio: string | null;
+  city: string | null;
+  sports_interest: string | null;
+  age: number | null;
+  age_verified: boolean;
+  height_cm: number | null;
+  height_verified: boolean;
+  weight_kg: number | null;
+  weight_verified: boolean;
+  performance: SportPerformance[];
+  achievements: Achievement[];
 }
 
 export interface Circle {
@@ -270,6 +315,10 @@ export interface CircleReport {
   games_cancelled: number;
   games_unplayed_past: number;
   games_total: number;
+  tournaments_completed: number;
+  tournaments_in_progress: number;
+  tournaments_setting_up: number;
+  tournaments_total: number;
   total_spent: string;
   venues: VenueUsage[];
 }
