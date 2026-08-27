@@ -18,6 +18,22 @@ import { Sport, UserProfile } from '../../lib/types';
 
 const SUGGESTED_LEVELS = ['District', 'State', 'National', 'International', 'Club', 'Open'];
 
+function formatDateOfBirth(iso: string): string {
+  const dob = new Date(`${iso}T00:00:00`);
+  const formatted = dob.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const hasHadBirthdayThisYear =
+    today.getMonth() > dob.getMonth() ||
+    (today.getMonth() === dob.getMonth() && today.getDate() >= dob.getDate());
+  if (!hasHadBirthdayThisYear) age -= 1;
+  return `${formatted} (age ${age})`;
+}
+
 export default function ProfileScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const { user } = useAuth();
@@ -31,7 +47,7 @@ export default function ProfileScreen() {
   const [editOpen, setEditOpen] = useState(false);
   const [bioInput, setBioInput] = useState('');
   const [sportsInterestInput, setSportsInterestInput] = useState('');
-  const [ageInput, setAgeInput] = useState('');
+  const [dobInput, setDobInput] = useState('');
   const [heightInput, setHeightInput] = useState('');
   const [weightInput, setWeightInput] = useState('');
   const [saving, setSaving] = useState(false);
@@ -69,7 +85,7 @@ export default function ProfileScreen() {
     if (!profile) return;
     setBioInput(profile.bio ?? '');
     setSportsInterestInput(profile.sports_interest ?? '');
-    setAgeInput(profile.age != null ? String(profile.age) : '');
+    setDobInput(profile.date_of_birth ?? '');
     setHeightInput(profile.height_cm != null ? String(profile.height_cm) : '');
     setWeightInput(profile.weight_kg != null ? String(profile.weight_kg) : '');
     setEditOpen(true);
@@ -79,12 +95,17 @@ export default function ProfileScreen() {
     if (saving) return;
     setSaving(true);
     try {
+      const trimmedDob = dobInput.trim();
+      if (trimmedDob && !/^\d{4}-\d{2}-\d{2}$/.test(trimmedDob)) {
+        showAlert('Invalid date', 'Enter date of birth as YYYY-MM-DD, e.g. 1996-01-15');
+        setSaving(false);
+        return;
+      }
       const payload: Record<string, unknown> = {
         bio: bioInput,
         sports_interest: sportsInterestInput || null,
+        date_of_birth: trimmedDob || null,
       };
-      const age = parseInt(ageInput, 10);
-      payload.age = ageInput.trim() && Number.isInteger(age) ? age : null;
       const height = parseFloat(heightInput);
       payload.height_cm = heightInput.trim() && !Number.isNaN(height) ? height : null;
       const weight = parseFloat(weightInput);
@@ -192,7 +213,11 @@ export default function ProfileScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Details</Text>
-          <DetailRow label="Age" value={profile.age != null ? String(profile.age) : null} verified={profile.age_verified} />
+          <DetailRow
+            label="Date of Birth"
+            value={profile.date_of_birth != null ? formatDateOfBirth(profile.date_of_birth) : null}
+            verified={profile.date_of_birth_verified}
+          />
           <DetailRow
             label="Height"
             value={profile.height_cm != null ? `${profile.height_cm} cm` : null}
@@ -288,14 +313,13 @@ export default function ProfileScreen() {
                 multiline
               />
 
-              <Text style={styles.fieldLabel}>Age</Text>
+              <Text style={styles.fieldLabel}>Date of Birth</Text>
               <TextInput
                 style={styles.input}
-                value={ageInput}
-                onChangeText={setAgeInput}
-                placeholder="e.g. 28"
+                value={dobInput}
+                onChangeText={setDobInput}
+                placeholder="YYYY-MM-DD, e.g. 1996-01-15"
                 placeholderTextColor="#9AA69E"
-                keyboardType="number-pad"
               />
 
               <Text style={styles.fieldLabel}>Height (cm)</Text>

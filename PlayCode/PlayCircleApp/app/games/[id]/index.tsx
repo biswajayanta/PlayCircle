@@ -352,7 +352,7 @@ export default function GameDetailScreen() {
                       <Text style={styles.expensesLinkText}>🗓️ Reschedule</Text>
                     </Pressable>
                   )}
-                  {matches.length === 0 && !(game.has_expenses && !game.all_settled) && (
+                  {matches.length === 0 && !game.has_expenses && (
                     <Pressable
                       style={styles.cancelLink}
                       onPress={() => setCancelConfirmOpen(true)}

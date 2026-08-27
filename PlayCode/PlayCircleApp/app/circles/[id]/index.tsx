@@ -80,10 +80,7 @@ function expenseBadge(item: Game): { label: string; bg: string; text: string } {
   if (!item.has_expenses) {
     return { label: 'No expenses', bg: '#F1F4F2', text: '#6B7A73' };
   }
-  if (item.all_settled) {
-    return { label: 'Settled up', bg: '#E6F1EC', text: '#1F6F50' };
-  }
-  return { label: 'Payment pending', bg: '#FDF2E3', text: '#9A6A00' };
+  return { label: 'Has expenses', bg: '#E6F1EC', text: '#1F6F50' };
 }
 
 // Today first, then upcoming games soonest-first, then past games most
@@ -317,9 +314,9 @@ export default function CircleDetailScreen() {
         </Pressable>
         <Pressable
           style={styles.reportButton}
-          onPress={() => router.push(`/circles/${id}/treasury`)}
+          onPress={() => router.push(`/circles/${id}/ledger`)}
         >
-          <Text style={styles.reportButtonText}>💰 Treasury</Text>
+          <Text style={styles.reportButtonText}>📒 Ledger</Text>
         </Pressable>
         <Pressable style={styles.reportButton} onPress={() => router.push('/search')}>
           <Text style={styles.reportButtonText}>🔍 Find Member</Text>

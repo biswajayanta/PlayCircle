@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -45,8 +45,8 @@ class UserMe(BaseModel):
     show_stats: bool
     show_activity: bool
     sports_interest: str | None = None
-    age: int | None = None
-    age_verified: bool
+    date_of_birth: date | None = None
+    date_of_birth_verified: bool
     height_cm: float | None = None
     height_verified: bool
     weight_kg: float | None = None
@@ -68,7 +68,7 @@ class ProfileUpdate(BaseModel):
     show_stats: bool | None = None
     show_activity: bool | None = None
     sports_interest: str | None = None
-    age: int | None = None
+    date_of_birth: date | None = None
     height_cm: float | None = None
     weight_kg: float | None = None
 
@@ -113,8 +113,8 @@ class UserProfile(BaseModel):
     bio: str | None = None
     city: str | None = None
     sports_interest: str | None = None
-    age: int | None = None
-    age_verified: bool
+    date_of_birth: date | None = None
+    date_of_birth_verified: bool
     height_cm: float | None = None
     height_verified: bool
     weight_kg: float | None = None

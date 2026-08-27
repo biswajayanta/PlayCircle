@@ -55,20 +55,6 @@ class GameReport(BaseModel):
     matches: list[MatchSummary]
 
 
-class SettlementTransaction(BaseModel):
-    from_user_id: uuid.UUID
-    from_display_name: str
-    to_user_id: uuid.UUID
-    to_display_name: str
-    amount: Decimal
-
-
-class SettlementPlan(BaseModel):
-    game_id: uuid.UUID
-    fully_settled: bool
-    transactions: list[SettlementTransaction]
-
-
 class LeaderboardEntry(BaseModel):
     user_id: uuid.UUID
     display_name: str

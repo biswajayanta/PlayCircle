@@ -60,7 +60,7 @@ function RootNavigator() {
         <Stack.Screen name="games/[id]/report" options={{ title: 'Game Report' }} />
         <Stack.Screen name="games/[id]/expenses" options={{ title: 'Expenses' }} />
         <Stack.Screen name="games/[id]/new-match" options={{ title: 'New Match' }} />
-	<Stack.Screen name="circles/[id]/treasury" options={{ title: 'Treasury' }} />
+	<Stack.Screen name="circles/[id]/ledger" options={{ title: 'Ledger' }} />
         <Stack.Screen name="games/[id]/players" options={{ title: 'Players' }} />
         <Stack.Screen name="matches/[matchId]/index" options={{ title: 'Live Score' }} />
       </Stack>

@@ -20,7 +20,7 @@ _ME_COLUMNS = """
     u.id AS user_id, u.email, u.phone, u.auth_provider,
     u.display_name, u.avatar_url, u.avatar_prompt,
     p.bio, p.city, p.is_public, p.show_stats, p.show_activity,
-    p.sports_interest, p.age, p.age_verified,
+    p.sports_interest, p.date_of_birth, p.date_of_birth_verified,
     p.height_cm, p.height_verified, p.weight_kg, p.weight_verified,
     u.created_at, p.updated_at
 """
@@ -28,7 +28,7 @@ _ME_COLUMNS = """
 _CORE_USER_FIELDS = {"display_name", "avatar_url", "avatar_prompt"}
 _PROFILE_FIELDS = {
     "bio", "city", "is_public", "show_stats", "show_activity",
-    "sports_interest", "age", "height_cm", "weight_kg",
+    "sports_interest", "date_of_birth", "height_cm", "weight_kg",
 }
 
 # Account creation now happens via POST /auth/signup (sets a password hash).
@@ -93,7 +93,7 @@ async def get_full_profile(
     profile_row = await pool.fetchrow(
         """
         SELECT u.id AS user_id, u.display_name, u.avatar_url, p.bio, p.city,
-               p.sports_interest, p.age, p.age_verified,
+               p.sports_interest, p.date_of_birth, p.date_of_birth_verified,
                p.height_cm, p.height_verified, p.weight_kg, p.weight_verified,
                p.is_public
         FROM core.users u
@@ -166,8 +166,8 @@ async def get_full_profile(
         bio=profile_row["bio"],
         city=profile_row["city"],
         sports_interest=profile_row["sports_interest"],
-        age=profile_row["age"],
-        age_verified=profile_row["age_verified"],
+        date_of_birth=profile_row["date_of_birth"],
+        date_of_birth_verified=profile_row["date_of_birth_verified"],
         height_cm=float(profile_row["height_cm"]) if profile_row["height_cm"] is not None else None,
         height_verified=profile_row["height_verified"],
         weight_kg=float(profile_row["weight_kg"]) if profile_row["weight_kg"] is not None else None,

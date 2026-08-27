@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,7 +12,7 @@ import {
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
-import { Expense, ExpenseDetail, GameDetail, SettlementPlan, UserMe } from '../../../lib/types';
+import { CircleMember, Expense, ExpenseDetail, GameDetail, UserMe } from '../../../lib/types';
 
 function formatMoney(amount: number | string, currency: string): string {
   const symbol = currency === 'INR' ? '₹' : `${currency} `;
@@ -36,6 +36,7 @@ export default function GameExpensesScreen() {
   const [me, setMe] = useState<UserMe | null>(null);
   const [game, setGame] = useState<GameDetail | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [members, setMembers] = useState<CircleMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,24 +48,22 @@ export default function GameExpensesScreen() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedDetail, setExpandedDetail] = useState<ExpenseDetail | null>(null);
   const [expandedLoading, setExpandedLoading] = useState(false);
-  const [settlingUserId, setSettlingUserId] = useState<string | null>(null);
-  const [settlementPlan, setSettlementPlan] = useState<SettlementPlan | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
     setError(null);
     try {
-      const [meResult, gameResult, expensesResult, settlementResult] = await Promise.all([
+      const [meResult, gameResult, expensesResult] = await Promise.all([
         api.get<UserMe>('/me'),
         api.get<GameDetail>(`/games/${id}`),
         api.get<Expense[]>(`/games/${id}/expenses`),
-        api.get<SettlementPlan>(`/games/${id}/settlement-plan`),
       ]);
       setMe(meResult);
       setGame(gameResult);
       setExpenses(expensesResult);
-      setSettlementPlan(settlementResult);
       setPayerId((prev) => prev ?? meResult.user_id);
+      const membersResult = await api.get<CircleMember[]>(`/circles/${gameResult.circle_id}/members`);
+      setMembers(membersResult);
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -79,16 +78,6 @@ export default function GameExpensesScreen() {
   useEffect(() => {
     load();
   }, [load]);
-
-  async function refreshSettlementPlan() {
-    if (!id) return;
-    try {
-      const plan = await api.get<SettlementPlan>(`/games/${id}/settlement-plan`);
-      setSettlementPlan(plan);
-    } catch {
-      // Non-critical — the plan will still catch up on the next full reload.
-    }
-  }
 
   async function handleCreateExpense() {
     if (!id || !description.trim() || !amount.trim() || !payerId) return;
@@ -109,7 +98,6 @@ export default function GameExpensesScreen() {
       setDescription('');
       setAmount('');
       setPayerId(me?.user_id ?? null);
-      refreshSettlementPlan();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to add expense';
       showAlert('Could not add expense', message);
@@ -138,22 +126,6 @@ export default function GameExpensesScreen() {
     }
   }
 
-  async function handleSettle(expenseId: string, userId: string) {
-    setSettlingUserId(userId);
-    try {
-      const updated = await api.patch<ExpenseDetail>(
-        `/expenses/${expenseId}/splits/${userId}/settle`
-      );
-      setExpandedDetail(updated);
-      refreshSettlementPlan();
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Failed to settle split';
-      showAlert('Could not settle', message);
-    } finally {
-      setSettlingUserId(null);
-    }
-  }
-
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -174,7 +146,9 @@ export default function GameExpensesScreen() {
   }
 
   const total = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
-  const isGameOwner = me?.user_id === game.creator_user_id;
+  // Any circle member can log an expense now — the composer just needs the
+  // members list to have loaded (it's fetched alongside the game).
+  const canAddExpense = members.length > 0;
 
   return (
     <View style={styles.container}>
@@ -193,24 +167,14 @@ export default function GameExpensesScreen() {
               <Text style={styles.summaryAmount}>{formatMoney(total, 'INR')}</Text>
             </View>
 
-            {settlementPlan && (
-              <View style={styles.settlementCard}>
-                <Text style={styles.settlementTitle}>Settlement plan</Text>
-                {settlementPlan.fully_settled ? (
-                  <Text style={styles.settlementEmptyText}>Everyone's settled up. 🎉</Text>
-                ) : (
-                  settlementPlan.transactions.map((t, i) => (
-                    <Text key={i} style={styles.settlementLine}>
-                      <Text style={styles.settlementName}>{t.from_display_name}</Text> owes{' '}
-                      <Text style={styles.settlementName}>{t.to_display_name}</Text>{' '}
-                      <Text style={styles.settlementAmount}>{formatMoney(t.amount, 'INR')}</Text>
-                    </Text>
-                  ))
-                )}
-              </View>
-            )}
+            <Pressable
+              style={styles.ledgerLink}
+              onPress={() => router.push(`/circles/${game.circle_id}/ledger`)}
+            >
+              <Text style={styles.ledgerLinkText}>View Circle Ledger for balances & settlements →</Text>
+            </Pressable>
 
-            {isGameOwner && (
+            {canAddExpense && (
               <View style={styles.composerCard}>
                 <TextInput
         placeholderTextColor="#9AA69E"
@@ -229,28 +193,26 @@ export default function GameExpensesScreen() {
                 />
                 <Text style={styles.fieldLabel}>Who actually paid?</Text>
                 <View style={styles.payerRow}>
-                  {game.participants
-                    .filter((p) => p.status === 'confirmed')
-                    .map((p) => (
+                  {members.map((m) => (
                       <Pressable
-                        key={p.user_id}
-                        style={[styles.payerChip, payerId === p.user_id && styles.payerChipSelected]}
-                        onPress={() => setPayerId(p.user_id)}
+                        key={m.user_id}
+                        style={[styles.payerChip, payerId === m.user_id && styles.payerChipSelected]}
+                        onPress={() => setPayerId(m.user_id)}
                       >
                         <Text
                           style={[
                             styles.payerChipText,
-                            payerId === p.user_id && styles.payerChipTextSelected,
+                            payerId === m.user_id && styles.payerChipTextSelected,
                           ]}
                         >
-                          {p.display_name}
+                          {m.display_name}
                         </Text>
                       </Pressable>
                     ))}
                 </View>
                 <Text style={styles.hintText}>
-                  Splits equally among the game's {game.confirmed_count} confirmed players.
-                  {payerId && ` ${game.participants.find((p) => p.user_id === payerId)?.display_name}'s share is marked paid automatically.`}
+                  Splits equally among the game's {game.confirmed_count} confirmed players — the
+                  payer doesn't need to be one of them.
                 </Text>
                 <Pressable
                   style={[
@@ -290,38 +252,16 @@ export default function GameExpensesScreen() {
                 {expandedLoading ? (
                   <ActivityIndicator size="small" color="#1F6F50" />
                 ) : (
-                  expandedDetail?.splits.map((split) => {
-                    const canSettle = !split.is_settled && isGameOwner;
-                    return (
-                      <View key={split.id} style={styles.splitRow}>
-                        <View style={styles.splitInfo}>
-                          <Text style={styles.splitName}>{split.display_name}</Text>
-                          <Text style={styles.splitAmount}>
-                            {formatMoney(split.share_amount, item.currency)}
-                          </Text>
-                        </View>
-                        {split.is_settled ? (
-                          <View style={styles.settledBadge}>
-                            <Text style={styles.settledBadgeText}>
-                              {Number(split.drawn_from_kitty) > 0 ? 'From kitty' : 'Paid'}
-                            </Text>
-                          </View>
-                        ) : canSettle ? (
-                          <Pressable
-                            style={styles.settleButton}
-                            onPress={() => handleSettle(item.id, split.user_id)}
-                            disabled={settlingUserId === split.user_id}
-                          >
-                            <Text style={styles.settleButtonText}>
-                              {settlingUserId === split.user_id ? '...' : 'Mark paid'}
-                            </Text>
-                          </Pressable>
-                        ) : (
-                          <Text style={styles.unpaidText}>Unpaid</Text>
-                        )}
+                  expandedDetail?.splits.map((split) => (
+                    <View key={split.id} style={styles.splitRow}>
+                      <View style={styles.splitInfo}>
+                        <Text style={styles.splitName}>{split.display_name}</Text>
+                        <Text style={styles.splitAmount}>
+                          {formatMoney(split.share_amount, item.currency)}
+                        </Text>
                       </View>
-                    );
-                  })
+                    </View>
+                  ))
                 )}
               </View>
             )}
@@ -355,33 +295,11 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
   },
-  settlementCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E7ECE9',
+  ledgerLink: {
+    marginBottom: 16,
   },
-  settlementTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#173A2E',
-    marginBottom: 8,
-  },
-  settlementEmptyText: {
+  ledgerLinkText: {
     fontSize: 13,
-    color: '#6B7A73',
-  },
-  settlementLine: {
-    fontSize: 14,
-    color: '#173A2E',
-    marginBottom: 6,
-  },
-  settlementName: {
-    fontWeight: '700',
-  },
-  settlementAmount: {
     fontWeight: '700',
     color: '#1F6F50',
   },
@@ -521,32 +439,6 @@ const styles = StyleSheet.create({
   splitAmount: {
     fontSize: 13,
     color: '#6B7A73',
-  },
-  settledBadge: {
-    backgroundColor: '#E6F1EC',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  },
-  settledBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#1F6F50',
-  },
-  settleButton: {
-    backgroundColor: '#1F6F50',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  settleButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  unpaidText: {
-    fontSize: 12,
-    color: '#B3261E',
   },
   errorText: {
     textAlign: 'center',

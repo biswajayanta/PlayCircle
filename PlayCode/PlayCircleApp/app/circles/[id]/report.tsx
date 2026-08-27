@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -106,6 +106,12 @@ export default function CircleReportScreen() {
       <View style={styles.spendCard}>
         <Text style={styles.spendLabel}>Total spent across all games</Text>
         <Text style={styles.spendValue}>₹{Number(report.total_spent).toFixed(2)}</Text>
+        <Pressable
+          style={styles.ledgerLink}
+          onPress={() => router.push(`/circles/${id}/ledger`)}
+        >
+          <Text style={styles.ledgerLinkText}>View Circle Ledger →</Text>
+        </Pressable>
       </View>
 
       {report.venues.length > 0 && (
@@ -235,6 +241,14 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: '800',
     marginTop: 4,
+  },
+  ledgerLink: {
+    marginTop: 12,
+  },
+  ledgerLinkText: {
+    color: '#D9EDE3',
+    fontSize: 13,
+    fontWeight: '700',
   },
   section: {
     backgroundColor: '#fff',
