@@ -14,21 +14,28 @@ import {
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
-import { Circle, CircleLedger, CircleMember, UserMe } from '../../../lib/types';
+import { Circle, CircleLedger, CircleMember, LedgerEntry, UserMe } from '../../../lib/types';
 
 function formatMoney(amount: string): string {
   return `₹${Number(amount).toFixed(2)}`;
 }
 
-function timeAgo(iso: string): string {
-  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+function formatEntryDate(iso: string): string {
+  const date = new Date(iso);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: sameYear ? undefined : 'numeric',
+  });
+}
+
+function entryPayer(e: LedgerEntry): string {
+  return e.kind === 'expense' ? (e.paid_by_display_name ?? '—') : (e.from_display_name ?? '—');
+}
+
+function entryRecipient(e: LedgerEntry): string {
+  return e.kind === 'expense' ? 'Group' : (e.to_display_name ?? '—');
 }
 
 export default function CircleLedgerScreen() {
@@ -181,21 +188,45 @@ export default function CircleLedgerScreen() {
         {ledger.entries.length === 0 ? (
           <Text style={styles.emptyText}>Nothing recorded yet.</Text>
         ) : (
-          ledger.entries.map((e) => (
-            <View key={e.id} style={styles.entryRow}>
-              <View style={styles.entryInfo}>
-                <Text style={styles.entryDescription}>{e.description}</Text>
-                <Text style={styles.entryMeta}>
-                  {e.kind === 'expense'
-                    ? `Paid by ${e.paid_by_display_name}`
-                    : `${e.from_display_name} → ${e.to_display_name}`}
-                  {' · '}
-                  {timeAgo(e.created_at)}
+          <ScrollView horizontal showsHorizontalScrollIndicator>
+            <View>
+              <View style={[styles.tableRow, styles.tableHeaderRow]}>
+                <Text style={[styles.tableCell, styles.tableHeaderCell, styles.colDate]}>Date</Text>
+                <Text style={[styles.tableCell, styles.tableHeaderCell, styles.colName]}>Payer</Text>
+                <Text style={[styles.tableCell, styles.tableHeaderCell, styles.colName]}>
+                  Recipient
+                </Text>
+                <Text style={[styles.tableCell, styles.tableHeaderCell, styles.colPurpose]}>
+                  Purpose
+                </Text>
+                <Text style={[styles.tableCell, styles.tableHeaderCell, styles.colAmount]}>
+                  Amount
                 </Text>
               </View>
-              <Text style={styles.entryAmount}>{formatMoney(e.amount)}</Text>
+              {ledger.entries.map((e, i) => (
+                <View
+                  key={e.id}
+                  style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt]}
+                >
+                  <Text style={[styles.tableCell, styles.colDate]}>
+                    {formatEntryDate(e.created_at)}
+                  </Text>
+                  <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>
+                    {entryPayer(e)}
+                  </Text>
+                  <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>
+                    {entryRecipient(e)}
+                  </Text>
+                  <Text style={[styles.tableCell, styles.colPurpose]} numberOfLines={2}>
+                    {e.description}
+                  </Text>
+                  <Text style={[styles.tableCell, styles.colAmount, styles.tableAmountText]}>
+                    {formatMoney(e.amount)}
+                  </Text>
+                </View>
+              ))}
             </View>
-          ))
+          </ScrollView>
         )}
       </View>
 
@@ -396,32 +427,47 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1F6F50',
   },
-  entryRow: {
+  tableRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F4F2',
   },
-  entryInfo: {
-    flex: 1,
-    paddingRight: 8,
+  tableRowAlt: {
+    backgroundColor: '#FAFBFA',
   },
-  entryDescription: {
-    fontSize: 14,
-    fontWeight: '600',
+  tableHeaderRow: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#E7ECE9',
+  },
+  tableCell: {
+    fontSize: 13,
     color: '#173A2E',
+    paddingRight: 12,
   },
-  entryMeta: {
-    fontSize: 12,
-    color: '#8A968F',
-    marginTop: 1,
-  },
-  entryAmount: {
-    fontSize: 14,
+  tableHeaderCell: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#173A2E',
+    color: '#8A968F',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  tableAmountText: {
+    fontWeight: '700',
+  },
+  colDate: {
+    width: 72,
+  },
+  colName: {
+    width: 100,
+  },
+  colPurpose: {
+    width: 150,
+  },
+  colAmount: {
+    width: 90,
+    textAlign: 'right',
   },
   modalOverlay: {
     flex: 1,

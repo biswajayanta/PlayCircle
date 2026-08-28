@@ -239,7 +239,10 @@ async def get_circle_ledger(
             LedgerEntry(
                 kind="transfer",
                 id=r["id"],
-                description=r["note"] or f"Payment: {r['from_display_name']} to {r['to_display_name']}",
+                # The payer/recipient are already their own columns in the
+                # ledger UI, so the fallback here is deliberately generic
+                # rather than repeating "X to Y".
+                description=r["note"] or "Payment",
                 amount=r["amount"],
                 created_at=r["created_at"],
                 from_display_name=r["from_display_name"],
