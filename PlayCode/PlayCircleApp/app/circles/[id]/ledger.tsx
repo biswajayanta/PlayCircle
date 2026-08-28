@@ -14,7 +14,15 @@ import {
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
-import { Circle, CircleLedger, CircleMember, LedgerEntry, UserMe } from '../../../lib/types';
+import {
+  Circle,
+  CircleLedger,
+  CircleMember,
+  ExpenseDetail,
+  GameDetail,
+  LedgerEntry,
+  UserMe,
+} from '../../../lib/types';
 
 function formatMoney(amount: string): string {
   return `₹${Number(amount).toFixed(2)}`;
@@ -38,6 +46,15 @@ function entryRecipient(e: LedgerEntry): string {
   return e.kind === 'expense' ? 'Group' : (e.to_display_name ?? '—');
 }
 
+function formatGameContext(game: GameDetail): string {
+  const date = new Date(game.scheduled_at).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  return `${game.sport_name} · ${game.venue_name} · ${date}`;
+}
+
 export default function CircleLedgerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
@@ -54,6 +71,12 @@ export default function CircleLedgerScreen() {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [recording, setRecording] = useState(false);
+
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailExpense, setDetailExpense] = useState<ExpenseDetail | null>(null);
+  const [detailGame, setDetailGame] = useState<GameDetail | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -112,6 +135,26 @@ export default function CircleLedgerScreen() {
       showAlert('Could not record', message);
     } finally {
       setRecording(false);
+    }
+  }
+
+  async function openExpenseDetail(expenseId: string, gameId: string) {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setDetailError(null);
+    setDetailExpense(null);
+    setDetailGame(null);
+    try {
+      const [expenseResult, gameResult] = await Promise.all([
+        api.get<ExpenseDetail>(`/expenses/${expenseId}`),
+        api.get<GameDetail>(`/games/${gameId}`),
+      ]);
+      setDetailExpense(expenseResult);
+      setDetailGame(gameResult);
+    } catch (err) {
+      setDetailError(err instanceof ApiError ? err.message : 'Failed to load expense details');
+    } finally {
+      setDetailLoading(false);
     }
   }
 
@@ -203,28 +246,37 @@ export default function CircleLedgerScreen() {
                   Amount
                 </Text>
               </View>
-              {ledger.entries.map((e, i) => (
-                <View
-                  key={e.id}
-                  style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt]}
-                >
-                  <Text style={[styles.tableCell, styles.colDate]}>
-                    {formatEntryDate(e.created_at)}
-                  </Text>
-                  <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>
-                    {entryPayer(e)}
-                  </Text>
-                  <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>
-                    {entryRecipient(e)}
-                  </Text>
-                  <Text style={[styles.tableCell, styles.colPurpose]} numberOfLines={2}>
-                    {e.description}
-                  </Text>
-                  <Text style={[styles.tableCell, styles.colAmount, styles.tableAmountText]}>
-                    {formatMoney(e.amount)}
-                  </Text>
-                </View>
-              ))}
+              {ledger.entries.map((e, i) => {
+                const gameId = e.kind === 'expense' ? e.game_id : null;
+                return (
+                  <Pressable
+                    key={e.id}
+                    style={[
+                      styles.tableRow,
+                      i % 2 === 1 && styles.tableRowAlt,
+                      gameId ? styles.tableRowPressable : null,
+                    ]}
+                    onPress={gameId ? () => openExpenseDetail(e.id, gameId) : undefined}
+                  >
+                    <Text style={[styles.tableCell, styles.colDate]}>
+                      {formatEntryDate(e.created_at)}
+                    </Text>
+                    <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>
+                      {entryPayer(e)}
+                    </Text>
+                    <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>
+                      {entryRecipient(e)}
+                    </Text>
+                    <Text style={[styles.tableCell, styles.colPurpose]} numberOfLines={2}>
+                      {e.description}
+                      {gameId ? ' ›' : ''}
+                    </Text>
+                    <Text style={[styles.tableCell, styles.colAmount, styles.tableAmountText]}>
+                      {formatMoney(e.amount)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           </ScrollView>
         )}
@@ -325,6 +377,53 @@ export default function CircleLedgerScreen() {
                   </Text>
                 </Pressable>
               </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={detailOpen} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <ScrollView>
+              {detailLoading ? (
+                <ActivityIndicator size="large" color="#1F6F50" style={{ marginVertical: 20 }} />
+              ) : detailError || !detailExpense || !detailGame ? (
+                <Text style={styles.errorText}>{detailError ?? 'Could not load this expense'}</Text>
+              ) : (
+                <>
+                  <Text style={styles.modalTitle}>{detailExpense.description}</Text>
+                  <Text style={styles.detailGameContext}>{formatGameContext(detailGame)}</Text>
+
+                  <View style={styles.detailTotalRow}>
+                    <Text style={styles.detailTotalLabel}>Total</Text>
+                    <Text style={styles.detailTotalAmount}>
+                      {formatMoney(detailExpense.amount)}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.fieldLabel}>
+                    Split among {detailExpense.splits.length}{' '}
+                    {detailExpense.splits.length === 1 ? 'player' : 'players'}
+                  </Text>
+                  {detailExpense.splits.map((s) => (
+                    <View key={s.id} style={styles.detailSplitRow}>
+                      <Text style={styles.detailSplitName}>
+                        {s.display_name}
+                        {s.user_id === detailExpense.paid_by_user_id ? '  (paid)' : ''}
+                      </Text>
+                      <Text style={styles.detailSplitAmount}>{formatMoney(s.share_amount)}</Text>
+                    </View>
+                  ))}
+                </>
+              )}
+
+              <Pressable
+                style={[styles.modalCancelButton, styles.detailCloseButton]}
+                onPress={() => setDetailOpen(false)}
+              >
+                <Text style={styles.modalCancelButtonText}>Close</Text>
+              </Pressable>
             </ScrollView>
           </View>
         </View>
@@ -436,6 +535,9 @@ const styles = StyleSheet.create({
   },
   tableRowAlt: {
     backgroundColor: '#FAFBFA',
+  },
+  tableRowPressable: {
+    cursor: 'pointer',
   },
   tableHeaderRow: {
     borderBottomWidth: 2,
@@ -553,5 +655,48 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.5,
+  },
+  detailGameContext: {
+    fontSize: 13,
+    color: '#6B7A73',
+    marginBottom: 16,
+  },
+  detailTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F7F9F8',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  detailTotalLabel: {
+    fontSize: 13,
+    color: '#6B7A73',
+  },
+  detailTotalAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#173A2E',
+  },
+  detailSplitRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F4F2',
+  },
+  detailSplitName: {
+    fontSize: 14,
+    color: '#173A2E',
+  },
+  detailSplitAmount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#173A2E',
+  },
+  detailCloseButton: {
+    marginTop: 20,
   },
 });
