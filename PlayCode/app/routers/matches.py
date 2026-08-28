@@ -17,6 +17,7 @@ from app.schemas.match import (
     RecordPoint,
 )
 from app.scoring.registry import get_engine
+from app.tournaments.propagate import propagate_winner
 
 router = APIRouter()
 
@@ -125,6 +126,30 @@ async def _save_score_and_maybe_complete(
                 team_score,
                 result,
             )
+
+        # If this match is a tournament bracket slot, propagate the winner
+        # into the next round now that it's known. Draws are skipped
+        # deliberately — a knockout bracket has no way to advance a tied
+        # match automatically; it would need a manual walkover instead.
+        if winner is not None:
+            tournament_match_id = await conn.fetchval(
+                "SELECT id FROM social.tournament_matches WHERE match_id = $1", match_id
+            )
+            if tournament_match_id is not None:
+                winner_user_id = next(
+                    (p["user_id"] for p in participant_rows if p["team"] == winner), None
+                )
+                if winner_user_id is not None:
+                    await conn.execute(
+                        """
+                        UPDATE social.tournament_matches
+                        SET status = 'completed', winner_user_id = $1
+                        WHERE id = $2
+                        """,
+                        winner_user_id,
+                        tournament_match_id,
+                    )
+                    await propagate_winner(conn, tournament_match_id, winner_user_id)
     else:
         # A point was undone and the match is no longer complete (e.g. correcting
         # a mis-tap that had ended it) — reopen it and clear any recorded results.
@@ -447,5 +472,27 @@ async def complete_match(
                 payload.ended_at,
                 json.dumps(payload.score) if payload.score is not None else None,
             )
+
+            # Same tournament-propagation hook as automatic completion —
+            # only fires when the match was actually completed with a clear
+            # winner, and only for the manual-conclude path where the
+            # caller explicitly supplied per-participant results.
+            if payload.status == "completed" and payload.participants:
+                tournament_match_id = await conn.fetchval(
+                    "SELECT id FROM social.tournament_matches WHERE match_id = $1", match_id
+                )
+                if tournament_match_id is not None:
+                    winners = [p.user_id for p in payload.participants if p.result == "win"]
+                    if len(winners) == 1:
+                        await conn.execute(
+                            """
+                            UPDATE social.tournament_matches
+                            SET status = 'completed', winner_user_id = $1
+                            WHERE id = $2
+                            """,
+                            winners[0],
+                            tournament_match_id,
+                        )
+                        await propagate_winner(conn, tournament_match_id, winners[0])
 
     return await _fetch_match_detail(pool, match_id)

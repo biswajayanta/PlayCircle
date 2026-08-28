@@ -3,7 +3,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
+  RefreshControl,
   Modal,
   Platform,
   Pressable,
@@ -17,7 +17,7 @@ import {
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
 import { subscribeToDataChanged } from '../../../lib/assistantEvents';
-import { Circle, Game, Sport, Venue } from '../../../lib/types';
+import { Circle, Game, Sport, Tournament, Venue } from '../../../lib/types';
 
 // Plain CSS-in-JS for the raw <input type="datetime-local"> used on web —
 // this isn't a React Native style object, it's real DOM CSS properties.
@@ -80,10 +80,7 @@ function expenseBadge(item: Game): { label: string; bg: string; text: string } {
   if (!item.has_expenses) {
     return { label: 'No expenses', bg: '#F1F4F2', text: '#6B7A73' };
   }
-  if (item.all_settled) {
-    return { label: 'Settled up', bg: '#E6F1EC', text: '#1F6F50' };
-  }
-  return { label: 'Payment pending', bg: '#FDF2E3', text: '#9A6A00' };
+  return { label: 'Has expenses', bg: '#E6F1EC', text: '#1F6F50' };
 }
 
 // Today first, then upcoming games soonest-first, then past games most
@@ -109,6 +106,7 @@ export default function CircleDetailScreen() {
 
   const [circle, setCircle] = useState<Circle | null>(null);
   const [games, setGames] = useState<Game[]>([]);
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [sports, setSports] = useState<Sport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,19 +125,24 @@ export default function CircleDetailScreen() {
   const [creating, setCreating] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [showOlderGames, setShowOlderGames] = useState(false);
+  const [activeListTab, setActiveListTab] = useState<'games' | 'tournaments'>('games');
+  const [showOlderTournaments, setShowOlderTournaments] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
     setError(null);
     try {
-      const [circleResult, gamesResult, venuesResult, sportsResult] = await Promise.all([
-        api.get<Circle>(`/circles/${id}`),
-        api.get<Game[]>(`/games?circle_id=${id}`),
-        api.get<Venue[]>('/venues'),
-        api.get<Sport[]>('/sports'),
-      ]);
+      const [circleResult, gamesResult, tournamentsResult, venuesResult, sportsResult] =
+        await Promise.all([
+          api.get<Circle>(`/circles/${id}`),
+          api.get<Game[]>(`/games?circle_id=${id}`),
+          api.get<Tournament[]>(`/tournaments?circle_id=${id}`),
+          api.get<Venue[]>('/venues'),
+          api.get<Sport[]>('/sports'),
+        ]);
       setCircle(circleResult);
       setGames(gamesResult);
+      setTournaments(tournamentsResult);
       setVenues(venuesResult);
       // Badminton has no scoring engine yet — hide it from selection until
       // one exists. Remove this filter once app/scoring/badminton.py lands.
@@ -253,8 +256,19 @@ export default function CircleDetailScreen() {
   const olderGamesCount = games.filter((g) => g.is_past).length;
   const displayedGames = groupAndSortGames(games, showOlderGames);
 
+  const olderTournamentsCount = tournaments.filter(
+    (t) => t.status === 'completed' || t.status === 'cancelled'
+  ).length;
+  const displayedTournaments = showOlderTournaments
+    ? tournaments
+    : tournaments.filter((t) => t.status !== 'completed' && t.status !== 'cancelled');
+
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+    >
       <Stack.Screen options={{ title: circle?.name ?? 'Circle' }} />
 
       {circle && <Text style={styles.subtitle}>You're {circle.my_role}</Text>}
@@ -287,6 +301,12 @@ export default function CircleDetailScreen() {
           <Text style={styles.newGameButtonText}>+ New Game</Text>
         </Pressable>
         <Pressable
+          style={styles.newTournamentButton}
+          onPress={() => router.push(`/tournaments/new?circleId=${id}`)}
+        >
+          <Text style={styles.newTournamentButtonText}>🏆 New Tournament</Text>
+        </Pressable>
+        <Pressable
           style={styles.reportButton}
           onPress={() => router.push(`/circles/${id}/report`)}
         >
@@ -294,75 +314,149 @@ export default function CircleDetailScreen() {
         </Pressable>
         <Pressable
           style={styles.reportButton}
-          onPress={() => router.push(`/circles/${id}/treasury`)}
+          onPress={() => router.push(`/circles/${id}/ledger`)}
         >
-          <Text style={styles.reportButtonText}>💰 Treasury</Text>
+          <Text style={styles.reportButtonText}>📒 Ledger</Text>
+        </Pressable>
+        <Pressable style={styles.reportButton} onPress={() => router.push('/search')}>
+          <Text style={styles.reportButtonText}>🔍 Find Member</Text>
         </Pressable>
       </View>
 
-      {olderGamesCount > 0 && (
+      <View style={styles.listTabRow}>
         <Pressable
-          style={styles.toggleOlderButton}
-          onPress={() => setShowOlderGames((prev) => !prev)}
+          style={[styles.listTabButton, activeListTab === 'games' && styles.listTabButtonActive]}
+          onPress={() => setActiveListTab('games')}
         >
-          <Text style={styles.toggleOlderButtonText}>
-            {showOlderGames
-              ? 'Hide older games'
-              : `Show ${olderGamesCount} older ${olderGamesCount === 1 ? 'game' : 'games'}`}
+          <Text
+            style={[
+              styles.listTabButtonText,
+              activeListTab === 'games' && styles.listTabButtonTextActive,
+            ]}
+          >
+            Games
           </Text>
         </Pressable>
-      )}
+        <Pressable
+          style={[
+            styles.listTabButton,
+            activeListTab === 'tournaments' && styles.listTabButtonActive,
+          ]}
+          onPress={() => setActiveListTab('tournaments')}
+        >
+          <Text
+            style={[
+              styles.listTabButtonText,
+              activeListTab === 'tournaments' && styles.listTabButtonTextActive,
+            ]}
+          >
+            Tournaments
+          </Text>
+        </Pressable>
+      </View>
 
-      <FlatList
-        data={displayedGames}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        onRefresh={load}
-        refreshing={loading}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>No games scheduled yet. Create one above.</Text>
-        }
-        renderItem={({ item }) => {
-          const statusStyle = STATUS_COLORS[item.status];
-          const expBadge = expenseBadge(item);
-          const canJoin = item.status === 'open' && !item.already_joined && !item.is_past;
-          return (
-            <View style={styles.card}>
-              <Pressable onPress={() => router.push(`/games/${item.id}`)}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle}>{item.venue_name}</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
-                    <Text style={[styles.statusBadgeText, { color: statusStyle.text }]}>
-                      {item.status}
+      {activeListTab === 'tournaments' && (
+        <>
+          {olderTournamentsCount > 0 && (
+            <Pressable
+              style={styles.toggleOlderButton}
+              onPress={() => setShowOlderTournaments((prev) => !prev)}
+            >
+              <Text style={styles.toggleOlderButtonText}>
+                {showOlderTournaments
+                  ? 'Hide completed tournaments'
+                  : `Show ${olderTournamentsCount} completed ${olderTournamentsCount === 1 ? 'tournament' : 'tournaments'}`}
+              </Text>
+            </Pressable>
+          )}
+
+          <View style={styles.listContent}>
+            {displayedTournaments.length === 0 ? (
+              <Text style={styles.emptyText}>No active tournaments. Create one above.</Text>
+            ) : (
+              displayedTournaments.map((t) => (
+                <Pressable
+                  key={t.id}
+                  style={styles.tournamentRow}
+                  onPress={() => router.push(`/tournaments/${t.id}`)}
+                >
+                  <View>
+                    <Text style={styles.tournamentRowName}>{t.name}</Text>
+                    <Text style={styles.tournamentRowMeta}>
+                      {t.sport_name} · {t.participant_count} players · {tournamentStatusLabel(t.status)}
                     </Text>
                   </View>
-                </View>
-                <Text style={styles.cardSubtitle}>{formatScheduledAt(item.scheduled_at)}</Text>
-                <Text style={styles.cardMeta}>
-                  {item.confirmed_count} {item.confirmed_count === 1 ? 'player' : 'players'} joined
-                  {item.is_past && item.status !== 'cancelled' ? ' · Past' : ''}
-                </Text>
-                <View style={[styles.expenseBadge, { backgroundColor: expBadge.bg }]}>
-                  <Text style={[styles.expenseBadgeText, { color: expBadge.text }]}>
-                    {expBadge.label}
-                  </Text>
-                </View>
-              </Pressable>
-              {canJoin && (
-                <Pressable
-                  style={[styles.joinButton, joiningId === item.id && styles.joinButtonDisabled]}
-                  onPress={() => handleJoinGame(item)}
-                  disabled={joiningId === item.id}
-                >
-                  <Text style={styles.joinButtonText}>
-                    {joiningId === item.id ? 'Joining...' : 'Join'}
-                  </Text>
+                  <Text style={styles.tournamentRowArrow}>›</Text>
                 </Pressable>
-              )}
-            </View>
-          );
-        }}
-      />
+              ))
+            )}
+          </View>
+        </>
+      )}
+
+      {activeListTab === 'games' && (
+        <>
+          {olderGamesCount > 0 && (
+            <Pressable
+              style={styles.toggleOlderButton}
+              onPress={() => setShowOlderGames((prev) => !prev)}
+            >
+              <Text style={styles.toggleOlderButtonText}>
+                {showOlderGames
+                  ? 'Hide older games'
+                  : `Show ${olderGamesCount} older ${olderGamesCount === 1 ? 'game' : 'games'}`}
+              </Text>
+            </Pressable>
+          )}
+
+          <View style={styles.listContent}>
+            {displayedGames.length === 0 ? (
+              <Text style={styles.emptyText}>No games scheduled yet. Create one above.</Text>
+            ) : (
+              displayedGames.map((item) => {
+                const statusStyle = STATUS_COLORS[item.status];
+                const expBadge = expenseBadge(item);
+                const canJoin = item.status === 'open' && !item.already_joined && !item.is_past;
+                return (
+                  <View key={item.id} style={styles.card}>
+                    <Pressable onPress={() => router.push(`/games/${item.id}`)}>
+                      <View style={styles.cardHeader}>
+                        <Text style={styles.cardTitle}>{item.venue_name}</Text>
+                        <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
+                          <Text style={[styles.statusBadgeText, { color: statusStyle.text }]}>
+                            {item.status}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.cardSubtitle}>{formatScheduledAt(item.scheduled_at)}</Text>
+                      <Text style={styles.cardMeta}>
+                        {item.confirmed_count} {item.confirmed_count === 1 ? 'player' : 'players'} joined
+                        {item.is_past && item.status !== 'cancelled' ? ' · Past' : ''}
+                      </Text>
+                      <View style={[styles.expenseBadge, { backgroundColor: expBadge.bg }]}>
+                        <Text style={[styles.expenseBadgeText, { color: expBadge.text }]}>
+                          {expBadge.label}
+                        </Text>
+                      </View>
+                    </Pressable>
+                    {canJoin && (
+                      <Pressable
+                        style={[styles.joinButton, joiningId === item.id && styles.joinButtonDisabled]}
+                        onPress={() => handleJoinGame(item)}
+                        disabled={joiningId === item.id}
+                      >
+                        <Text style={styles.joinButtonText}>
+                          {joiningId === item.id ? 'Joining...' : 'Join'}
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </View>
+        </>
+      )}
 
       <Modal visible={createOpen} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
@@ -648,16 +742,36 @@ export default function CircleDetailScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </ScrollView>
   );
+}
+
+function tournamentStatusLabel(status: Tournament['status']): string {
+  switch (status) {
+    case 'draft':
+      return 'Setting up';
+    case 'fixture_set':
+      return 'Bracket set';
+    case 'in_progress':
+      return 'In progress';
+    case 'completed':
+      return 'Completed';
+    case 'cancelled':
+      return 'Cancelled';
+    default:
+      return status;
+  }
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F7F9F8',
+  },
+  scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
+    paddingBottom: 32,
   },
   centered: {
     flex: 1,
@@ -765,6 +879,7 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
     marginBottom: 16,
   },
@@ -774,6 +889,70 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 10,
+  },
+  newTournamentButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#C9971F',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  newTournamentButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  listTabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 20,
+    marginBottom: 4,
+  },
+  listTabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D6DED9',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  listTabButtonActive: { backgroundColor: '#1F6F50', borderColor: '#1F6F50' },
+  listTabButtonText: { fontSize: 14, fontWeight: '700', color: '#173A2E' },
+  listTabButtonTextActive: { color: '#fff' },
+  tournamentsSection: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#173A2E',
+    marginBottom: 8,
+  },
+  tournamentRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E7ECE9',
+    padding: 12,
+    marginBottom: 8,
+  },
+  tournamentRowName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#173A2E',
+  },
+  tournamentRowMeta: {
+    fontSize: 12,
+    color: '#6B7A73',
+    marginTop: 2,
+  },
+  tournamentRowArrow: {
+    fontSize: 20,
+    color: '#B8C4BE',
   },
   reportButton: {
     alignSelf: 'flex-start',

@@ -28,7 +28,6 @@ class GameOut(BaseModel):
     already_joined: bool
     is_past: bool
     has_expenses: bool
-    all_settled: bool
     created_at: datetime
 
 

@@ -34,12 +34,7 @@ _GAME_COLUMNS = """
     (g.scheduled_at AT TIME ZONE '""" + _TZ + """')::date < (now() AT TIME ZONE '""" + _TZ + """')::date AS is_past,
     EXISTS (
         SELECT 1 FROM financial.expenses fe WHERE fe.game_id = g.id
-    ) AS has_expenses,
-    NOT EXISTS (
-        SELECT 1 FROM financial.expense_splits fes
-        JOIN financial.expenses fe2 ON fe2.id = fes.expense_id
-        WHERE fe2.game_id = g.id AND fes.is_settled = false
-    ) AS all_settled
+    ) AS has_expenses
 """
 
 
@@ -395,18 +390,13 @@ async def cancel_game(
                     detail="Can't cancel — matches have already been played in this game",
                 )
 
-            unpaid_count = await conn.fetchval(
-                """
-                SELECT count(*) FROM financial.expense_splits es
-                JOIN financial.expenses e ON e.id = es.expense_id
-                WHERE e.game_id = $1 AND es.is_settled = false
-                """,
-                game_id,
+            has_expenses = await conn.fetchval(
+                "SELECT 1 FROM financial.expenses WHERE game_id = $1", game_id
             )
-            if unpaid_count > 0:
+            if has_expenses:
                 raise HTTPException(
                     status_code=422,
-                    detail="Can't cancel — there are unpaid expenses in this game",
+                    detail="Can't cancel — there are expenses logged against this game",
                 )
 
             await conn.execute(

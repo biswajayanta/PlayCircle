@@ -26,6 +26,8 @@ _ME_COLUMNS = """
     u.id AS user_id, u.email, u.phone, u.auth_provider,
     u.display_name, u.avatar_url, u.avatar_prompt,
     p.bio, p.city, p.is_public, p.show_stats, p.show_activity,
+    p.sports_interest, p.date_of_birth, p.date_of_birth_verified,
+    p.height_cm, p.height_verified, p.weight_kg, p.weight_verified,
     u.created_at, p.updated_at
 """
 

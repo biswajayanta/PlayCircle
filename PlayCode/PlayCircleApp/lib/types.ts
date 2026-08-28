@@ -11,8 +11,53 @@ export interface UserMe {
   is_public: boolean;
   show_stats: boolean;
   show_activity: boolean;
+  sports_interest: string | null;
+  date_of_birth: string | null;
+  date_of_birth_verified: boolean;
+  height_cm: number | null;
+  height_verified: boolean;
+  weight_kg: number | null;
+  weight_verified: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface Achievement {
+  id: string;
+  sport_id: number;
+  sport_name: string;
+  level: string;
+  event_name: string;
+  rank: string;
+  verified: boolean;
+  created_at: string;
+}
+
+export interface SportPerformance {
+  sport_id: number;
+  sport_name: string;
+  matches_played: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  tournaments_played: number;
+}
+
+export interface UserProfile {
+  user_id: string;
+  display_name: string;
+  avatar_url: string | null;
+  bio: string | null;
+  city: string | null;
+  sports_interest: string | null;
+  date_of_birth: string | null;
+  date_of_birth_verified: boolean;
+  height_cm: number | null;
+  height_verified: boolean;
+  weight_kg: number | null;
+  weight_verified: boolean;
+  performance: SportPerformance[];
+  achievements: Achievement[];
 }
 
 export interface Circle {
@@ -40,7 +85,6 @@ export interface Game {
   already_joined: boolean;
   is_past: boolean;
   has_expenses: boolean;
-  all_settled: boolean;
   created_at: string;
 }
 
@@ -79,6 +123,46 @@ export interface AssistantConfirmResponse {
   reply: string;
   success: boolean;
   result: Record<string, unknown> | null;
+}
+
+export interface Tournament {
+  id: string;
+  circle_id: string;
+  circle_name: string;
+  sport_id: number;
+  sport_name: string;
+  name: string;
+  creator_user_id: string;
+  format: string;
+  status: 'draft' | 'fixture_set' | 'in_progress' | 'completed' | 'cancelled';
+  game_id: string | null;
+  participant_count: number;
+  created_at: string;
+}
+
+export interface TournamentParticipant {
+  user_id: string;
+  display_name: string;
+  joined_at: string;
+}
+
+export interface TournamentMatch {
+  id: string;
+  round_number: number;
+  position_in_round: number;
+  player_1_user_id: string | null;
+  player_1_display_name: string | null;
+  player_2_user_id: string | null;
+  player_2_display_name: string | null;
+  winner_user_id: string | null;
+  match_id: string | null;
+  status: 'pending' | 'ready' | 'in_progress' | 'completed' | 'walkover';
+}
+
+export interface Bracket {
+  tournament_id: string;
+  total_rounds: number;
+  matches: TournamentMatch[];
 }
 
 export interface Sport {
@@ -142,9 +226,6 @@ export interface ExpenseSplit {
   user_id: string;
   display_name: string;
   share_amount: string;
-  is_settled: boolean;
-  settled_at: string | null;
-  drawn_from_kitty: string;
 }
 
 export interface Expense {
@@ -230,6 +311,10 @@ export interface CircleReport {
   games_cancelled: number;
   games_unplayed_past: number;
   games_total: number;
+  tournaments_completed: number;
+  tournaments_in_progress: number;
+  tournaments_setting_up: number;
+  tournaments_total: number;
   total_spent: string;
   venues: VenueUsage[];
 }
@@ -260,20 +345,6 @@ export interface GameReport {
   matches: MatchSummary[];
 }
 
-export interface SettlementTransaction {
-  from_user_id: string;
-  from_display_name: string;
-  to_user_id: string;
-  to_display_name: string;
-  amount: string;
-}
-
-export interface SettlementPlan {
-  game_id: string;
-  fully_settled: boolean;
-  transactions: SettlementTransaction[];
-}
-
 export interface LeaderboardEntry {
   user_id: string;
   display_name: string;
@@ -288,36 +359,50 @@ export interface CircleLeaderboard {
   entries: LeaderboardEntry[];
 }
 
-export interface Treasurer {
-  circle_id: string;
-  user_id: string;
-  display_name: string;
-  set_by_user_id: string;
-  created_at: string;
-}
-
-export interface AdvanceContribution {
+export interface Transfer {
   id: string;
-  contributor_user_id: string;
-  contributor_display_name: string;
+  circle_id: string;
+  from_user_id: string;
+  from_display_name: string;
+  to_user_id: string;
+  to_display_name: string;
   amount: string;
   note: string | null;
   recorded_by_user_id: string;
   created_at: string;
 }
 
-export interface MemberKittyBalance {
+export interface LedgerBalance {
   user_id: string;
   display_name: string;
-  total_contributed: string;
-  total_drawn: string;
+  // Positive = the circle owes them money. Negative = they owe the circle.
   balance: string;
 }
 
-export interface Treasury {
+export interface LedgerEntry {
+  kind: 'expense' | 'transfer';
+  id: string;
+  description: string;
+  amount: string;
+  created_at: string;
+  game_id?: string | null;
+  paid_by_display_name?: string | null;
+  from_display_name?: string | null;
+  to_display_name?: string | null;
+}
+
+export interface SettlementSuggestion {
+  from_user_id: string;
+  from_display_name: string;
+  to_user_id: string;
+  to_display_name: string;
+  amount: string;
+}
+
+export interface CircleLedger {
   circle_id: string;
-  treasurer: Treasurer | null;
-  treasurer_pool_balance: string | null;
-  balances: MemberKittyBalance[];
-  contributions: AdvanceContribution[];
+  balances: LedgerBalance[];
+  suggested_settlements: SettlementSuggestion[];
+  fully_settled: boolean;
+  entries: LedgerEntry[];
 }

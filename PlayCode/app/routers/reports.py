@@ -1,6 +1,5 @@
 import json
 import uuid
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -12,8 +11,6 @@ from app.schemas.report import (
     GameReport,
     LeaderboardEntry,
     MatchSummary,
-    SettlementPlan,
-    SettlementTransaction,
     VenueUsage,
 )
 
@@ -45,34 +42,6 @@ async def _require_circle_member_for_game(conn, game_id: uuid.UUID, user_id: uui
     )
     if not is_member:
         raise HTTPException(status_code=403, detail="You must be a member of this game's circle")
-
-
-def _simplify_debts(net_balances: dict[uuid.UUID, Decimal]) -> list[tuple[uuid.UUID, uuid.UUID, Decimal]]:
-    """Standard greedy min-cash-flow settlement: repeatedly match the biggest
-    creditor with the biggest debtor until everyone's balance is zero. Not
-    guaranteed globally minimal in every edge case, but it's the well-known
-    practical algorithm (same one Splitwise-style apps use) and always
-    produces at most n-1 transactions for n people."""
-    creditors = [[uid, bal] for uid, bal in net_balances.items() if bal > 0]
-    debtors = [[uid, -bal] for uid, bal in net_balances.items() if bal < 0]
-    creditors.sort(key=lambda x: x[1], reverse=True)
-    debtors.sort(key=lambda x: x[1], reverse=True)
-
-    transactions = []
-    i, j = 0, 0
-    while i < len(debtors) and j < len(creditors):
-        debtor_id, debt_amt = debtors[i]
-        creditor_id, credit_amt = creditors[j]
-        amount = min(debt_amt, credit_amt)
-        if amount > 0:
-            transactions.append((debtor_id, creditor_id, amount))
-        debtors[i][1] -= amount
-        creditors[j][1] -= amount
-        if debtors[i][1] <= Decimal("0.00"):
-            i += 1
-        if creditors[j][1] <= Decimal("0.00"):
-            j += 1
-    return transactions
 
 
 @router.get("/circles/{circle_id}/report", response_model=CircleReport)
@@ -123,6 +92,21 @@ async def get_circle_report(
             circle_id,
         )
 
+        tournament_counts = await conn.fetchrow(
+            """
+            SELECT
+                count(*) FILTER (WHERE status = 'completed') AS tournaments_completed,
+                count(*) FILTER (WHERE status = 'in_progress') AS tournaments_in_progress,
+                count(*) FILTER (WHERE status IN ('draft', 'fixture_set')) AS tournaments_setting_up,
+                count(*) AS tournaments_total
+            FROM social.tournaments
+            WHERE circle_id = $1
+            """,
+            circle_id,
+        )
+        # No 'cancelled' bucket — nothing currently sets that status (no
+        # tournament-cancel endpoint exists yet), so it's dead code for now.
+
         venue_rows = await conn.fetch(
             """
             SELECT v.name AS venue_name, count(*) AS games_count
@@ -144,6 +128,10 @@ async def get_circle_report(
         games_cancelled=game_counts["games_cancelled"],
         games_unplayed_past=game_counts["games_unplayed_past"],
         games_total=game_counts["games_total"],
+        tournaments_completed=tournament_counts["tournaments_completed"],
+        tournaments_in_progress=tournament_counts["tournaments_in_progress"],
+        tournaments_setting_up=tournament_counts["tournaments_setting_up"],
+        tournaments_total=tournament_counts["tournaments_total"],
         total_spent=total_spent,
         venues=[VenueUsage(**dict(r)) for r in venue_rows],
     )
@@ -237,68 +225,6 @@ async def get_game_report(
         status=game_row["status"],
         total_expenses=total_expenses,
         matches=matches,
-    )
-
-
-@router.get("/games/{game_id}/settlement-plan", response_model=SettlementPlan)
-async def get_settlement_plan(
-    game_id: uuid.UUID,
-    current_user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    pool = get_pool()
-    async with pool.acquire() as conn:
-        await _require_circle_member_for_game(conn, game_id, current_user_id)
-
-        game_exists = await conn.fetchval("SELECT 1 FROM social.games WHERE id = $1", game_id)
-        if not game_exists:
-            raise HTTPException(status_code=404, detail="Game not found")
-
-        # Every unsettled split is a debt: the split's user_id owes the
-        # expense's paid_by_user_id that share_amount. Settled splits (the
-        # payer's own share, or anything already marked paid) don't count —
-        # they're already resolved.
-        debt_rows = await conn.fetch(
-            """
-            SELECT es.user_id AS debtor_id, e.paid_by_user_id AS creditor_id, es.share_amount
-            FROM financial.expense_splits es
-            JOIN financial.expenses e ON e.id = es.expense_id
-            WHERE e.game_id = $1 AND es.is_settled = false
-            """,
-            game_id,
-        )
-
-        net_balances: dict[uuid.UUID, Decimal] = {}
-        for r in debt_rows:
-            net_balances[r["creditor_id"]] = net_balances.get(r["creditor_id"], Decimal("0")) + r["share_amount"]
-            net_balances[r["debtor_id"]] = net_balances.get(r["debtor_id"], Decimal("0")) - r["share_amount"]
-
-        raw_transactions = _simplify_debts(net_balances)
-
-        transactions = []
-        for debtor_id, creditor_id, amount in raw_transactions:
-            names = await conn.fetchrow(
-                """
-                SELECT
-                    (SELECT display_name FROM core.users WHERE id = $1) AS from_name,
-                    (SELECT display_name FROM core.users WHERE id = $2) AS to_name
-                """,
-                debtor_id,
-                creditor_id,
-            )
-            transactions.append(
-                SettlementTransaction(
-                    from_user_id=debtor_id,
-                    from_display_name=names["from_name"],
-                    to_user_id=creditor_id,
-                    to_display_name=names["to_name"],
-                    amount=amount.quantize(Decimal("0.01")),
-                )
-            )
-
-    return SettlementPlan(
-        game_id=game_id,
-        fully_settled=len(transactions) == 0,
-        transactions=transactions,
     )
 
 

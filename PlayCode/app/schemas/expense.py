@@ -36,9 +36,6 @@ class ExpenseSplitOut(BaseModel):
     user_id: uuid.UUID
     display_name: str
     share_amount: Decimal
-    is_settled: bool
-    settled_at: datetime | None
-    drawn_from_kitty: Decimal
 
 
 class ExpenseDetail(ExpenseOut):

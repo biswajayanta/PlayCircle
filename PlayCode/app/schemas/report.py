@@ -20,6 +20,10 @@ class CircleReport(BaseModel):
     games_cancelled: int
     games_unplayed_past: int
     games_total: int
+    tournaments_completed: int
+    tournaments_in_progress: int
+    tournaments_setting_up: int
+    tournaments_total: int
     total_spent: Decimal
     venues: list[VenueUsage]
 
@@ -49,20 +53,6 @@ class GameReport(BaseModel):
     status: str
     total_expenses: Decimal
     matches: list[MatchSummary]
-
-
-class SettlementTransaction(BaseModel):
-    from_user_id: uuid.UUID
-    from_display_name: str
-    to_user_id: uuid.UUID
-    to_display_name: str
-    amount: Decimal
-
-
-class SettlementPlan(BaseModel):
-    game_id: uuid.UUID
-    fully_settled: bool
-    transactions: list[SettlementTransaction]
 
 
 class LeaderboardEntry(BaseModel):
