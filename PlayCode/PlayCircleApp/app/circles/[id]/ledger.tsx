@@ -14,6 +14,7 @@ import {
 
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
+import { saveBlob } from '../../../lib/download';
 import {
   Circle,
   CircleLedger,
@@ -71,6 +72,8 @@ export default function CircleLedgerScreen() {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [recording, setRecording] = useState(false);
+
+  const [exporting, setExporting] = useState<'xlsx' | 'pdf' | null>(null);
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -138,6 +141,21 @@ export default function CircleLedgerScreen() {
     }
   }
 
+  async function handleExport(format: 'xlsx' | 'pdf') {
+    if (!id || exporting) return;
+    setExporting(format);
+    try {
+      const blob = await api.getBlob(`/circles/${id}/ledger/export?format=${format}`);
+      const safeName = (circle?.name ?? 'circle').replace(/[^A-Za-z0-9_-]+/g, '-');
+      await saveBlob(blob, `${safeName}-ledger.${format}`);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Failed to export ledger';
+      showAlert('Could not export', message);
+    } finally {
+      setExporting(null);
+    }
+  }
+
   async function openExpenseDetail(expenseId: string, gameId: string) {
     setDetailOpen(true);
     setDetailLoading(true);
@@ -180,6 +198,27 @@ export default function CircleLedgerScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Stack.Screen options={{ title: `${circle.name} · Ledger` }} />
+
+      <View style={styles.exportRow}>
+        <Pressable
+          style={[styles.exportButton, exporting === 'xlsx' && styles.disabledButton]}
+          onPress={() => handleExport('xlsx')}
+          disabled={exporting !== null}
+        >
+          <Text style={styles.exportButtonText}>
+            {exporting === 'xlsx' ? 'Exporting…' : '⬇ Excel'}
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.exportButton, exporting === 'pdf' && styles.disabledButton]}
+          onPress={() => handleExport('pdf')}
+          disabled={exporting !== null}
+        >
+          <Text style={styles.exportButtonText}>
+            {exporting === 'pdf' ? 'Exporting…' : '⬇ PDF'}
+          </Text>
+        </Pressable>
+      </View>
 
       <View style={styles.section}>
         <View style={styles.sectionHeaderRow}>
@@ -462,6 +501,25 @@ const styles = StyleSheet.create({
   retryButtonText: {
     color: '#fff',
     fontWeight: '600',
+  },
+  exportRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  exportButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D6DED9',
+  },
+  exportButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1F6F50',
   },
   section: {
     backgroundColor: '#fff',

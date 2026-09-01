@@ -60,3 +60,34 @@ class CircleLedger(BaseModel):
     suggested_settlements: list[SettlementSuggestion]
     fully_settled: bool
     entries: list[LedgerEntry]
+
+
+class PersonalContribution(BaseModel):
+    """One line in a single user's own view of a circle's ledger — unlike
+    LedgerEntry, `amount` is always *this user's* amount (their split share
+    for an expense, not the game's total), so it's meaningful to sum."""
+
+    kind: str  # "expense_share" | "transfer_sent" | "transfer_received"
+    id: uuid.UUID
+    description: str
+    amount: Decimal
+    created_at: datetime
+    counterparty_display_name: str | None = None
+    is_payer: bool = False  # expense_share only: did this user pay the whole thing
+    game_id: uuid.UUID | None = None
+    sport_name: str | None = None
+    venue_name: str | None = None
+    game_scheduled_at: datetime | None = None
+
+
+class PersonalCircleLedger(BaseModel):
+    circle_id: uuid.UUID
+    circle_name: str
+    balance: Decimal
+    quick_settle: list[SettlementSuggestion]
+    entries: list[PersonalContribution]
+
+
+class UserLedgerOut(BaseModel):
+    user_id: uuid.UUID
+    circles: list[PersonalCircleLedger]
