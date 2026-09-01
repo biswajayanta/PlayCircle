@@ -218,4 +218,12 @@ async def test_a_game_can_mix_singles_and_doubles_matches(
     matches_list = await client.get(
         f"/games/{game['id']}/matches", headers=auth_headers(circle_owner["token"])
     )
-    assert len(matches_list.json()) == 1
+    listed = matches_list.json()
+    assert len(listed) == 1
+    # The list endpoint carries participants too — the game screen shows
+    # "who's playing who" for every match without an extra fetch per row.
+    participant_ids = {p["user_id"] for p in listed[0]["participants"]}
+    assert participant_ids == {
+        circle_owner["user"]["user_id"],
+        signed_up_user["user"]["user_id"],
+    }

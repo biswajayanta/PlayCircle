@@ -16,7 +16,7 @@ import {
 import { showAlert } from '../../../lib/alert';
 import { api, ApiError } from '../../../lib/api';
 import { subscribeToDataChanged } from '../../../lib/assistantEvents';
-import { GameDetail, Match, Post, PostDetail, UserMe } from '../../../lib/types';
+import { GameDetail, MatchDetail, Post, PostDetail, UserMe } from '../../../lib/types';
 
 // Plain CSS-in-JS for the raw <input type="datetime-local"> used on web —
 // this isn't a React Native style object, it's real DOM CSS properties.
@@ -59,6 +59,13 @@ function formatScheduledAt(iso: string): string {
   });
 }
 
+function teamNames(match: MatchDetail, team: number): string {
+  return match.participants
+    .filter((p) => p.team === team)
+    .map((p) => p.display_name)
+    .join(' & ');
+}
+
 function timeAgo(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (seconds < 60) return 'just now';
@@ -76,7 +83,8 @@ export default function GameDetailScreen() {
   const [game, setGame] = useState<GameDetail | null>(null);
   const [me, setMe] = useState<UserMe | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
-  const [matches, setMatches] = useState<Match[]>([]);
+  const [matches, setMatches] = useState<MatchDetail[]>([]);
+  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,7 +114,7 @@ export default function GameDetailScreen() {
       const [gameResult, postsResult, matchesResult, meResult] = await Promise.all([
         api.get<GameDetail>(`/games/${id}`),
         api.get<Post[]>(`/games/${id}/posts`),
-        api.get<Match[]>(`/games/${id}/matches`),
+        api.get<MatchDetail[]>(`/games/${id}/matches`),
         api.get<UserMe>('/me'),
       ]);
       setGame(gameResult);
@@ -367,19 +375,77 @@ export default function GameDetailScreen() {
               {matches.length === 0 ? (
                 <Text style={styles.noMatchesText}>No matches recorded yet.</Text>
               ) : (
-                matches.map((m) => (
-                  <Pressable
-                    key={m.id}
-                    style={styles.matchRow}
-                    onPress={() => router.push(`/matches/${m.id}`)}
-                  >
-                    <Text style={styles.matchFormatText}>{m.format}</Text>
-                    <Text style={styles.matchScoreText}>
-                      {m.score.team_1 ?? 0} – {m.score.team_2 ?? 0}
-                    </Text>
-                    <Text style={styles.matchStatusText}>{m.status}</Text>
-                  </Pressable>
-                ))
+                matches.map((m) => {
+                  const team1 = teamNames(m, 1) || 'Team 1';
+                  const team2 = teamNames(m, 2) || 'Team 2';
+                  const score1 = m.score.team_1 ?? 0;
+                  const score2 = m.score.team_2 ?? 0;
+                  const isComplete = m.status === 'completed';
+                  const isDraw = isComplete && score1 === score2;
+                  const winnerTeam = isComplete && !isDraw ? (score1 > score2 ? 1 : 2) : null;
+                  const winnerNames = winnerTeam ? teamNames(m, winnerTeam) : null;
+
+                  const sets = m.score.sets;
+                  const isSetBased = sets !== undefined;
+                  const boardsPlayed = m.score.boards_played;
+                  const isBoardBased = boardsPlayed !== undefined;
+                  const isExpanded = expandedMatchId === m.id;
+
+                  return (
+                    <View key={m.id} style={styles.matchCard}>
+                      <Pressable onPress={() => router.push(`/matches/${m.id}`)}>
+                        <View style={styles.matchCardHeader}>
+                          <Text style={styles.matchFormatText}>{m.format}</Text>
+                          <Text style={styles.matchStatusText}>{m.status.replace('_', ' ')}</Text>
+                        </View>
+                        <Text style={styles.matchTeamsText} numberOfLines={2}>
+                          {team1} <Text style={styles.matchVsText}>vs</Text> {team2}
+                        </Text>
+                        <Text style={styles.matchScoreText}>
+                          {score1} – {score2}
+                        </Text>
+                        {isComplete && (
+                          <Text style={styles.matchResultText}>
+                            {isDraw ? "It's a draw" : `🏆 ${winnerNames} won`}
+                          </Text>
+                        )}
+                      </Pressable>
+
+                      {(isSetBased || isBoardBased) && (
+                        <Pressable
+                          style={styles.matchDetailsToggle}
+                          onPress={() => setExpandedMatchId(isExpanded ? null : m.id)}
+                        >
+                          <Text style={styles.matchDetailsToggleText}>
+                            {isExpanded
+                              ? '▾ Hide set/board details'
+                              : `▸ Show ${isSetBased ? 'set' : 'board'} details`}
+                          </Text>
+                        </Pressable>
+                      )}
+
+                      {isExpanded && isSetBased && (
+                        <View style={styles.matchDetailsBox}>
+                          {(sets?.length ?? 0) === 0 ? (
+                            <Text style={styles.matchDetailsEmptyText}>No sets completed yet.</Text>
+                          ) : (
+                            sets!.map((s, i) => (
+                              <Text key={i} style={styles.matchDetailsRow}>
+                                Set {i + 1}: {s.team_1}–{s.team_2} → {teamNames(m, s.winner)}
+                              </Text>
+                            ))
+                          )}
+                        </View>
+                      )}
+
+                      {isExpanded && isBoardBased && (
+                        <View style={styles.matchDetailsBox}>
+                          <Text style={styles.matchDetailsRow}>Boards played: {boardsPlayed}</Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })
               )}
               {isActive && !game.is_past && (
                 <Pressable
@@ -804,13 +870,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8A968F',
   },
-  matchRow: {
+  matchCard: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F4F2',
+  },
+  matchCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F4F2',
   },
   matchFormatText: {
     fontSize: 12,
@@ -818,15 +886,56 @@ const styles = StyleSheet.create({
     color: '#6B7A73',
     textTransform: 'capitalize',
   },
+  matchTeamsText: {
+    marginTop: 4,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#173A2E',
+  },
+  matchVsText: {
+    fontWeight: '400',
+    color: '#8A968F',
+  },
   matchScoreText: {
-    fontSize: 15,
+    marginTop: 2,
+    fontSize: 17,
     fontWeight: '700',
     color: '#173A2E',
+  },
+  matchResultText: {
+    marginTop: 2,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1F6F50',
   },
   matchStatusText: {
     fontSize: 12,
     color: '#8A968F',
     textTransform: 'capitalize',
+  },
+  matchDetailsToggle: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+  },
+  matchDetailsToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1F6F50',
+  },
+  matchDetailsBox: {
+    marginTop: 6,
+    backgroundColor: '#F7F9F8',
+    borderRadius: 8,
+    padding: 10,
+  },
+  matchDetailsRow: {
+    fontSize: 12,
+    color: '#334138',
+    marginBottom: 2,
+  },
+  matchDetailsEmptyText: {
+    fontSize: 12,
+    color: '#8A968F',
   },
   startMatchButton: {
     marginTop: 10,
