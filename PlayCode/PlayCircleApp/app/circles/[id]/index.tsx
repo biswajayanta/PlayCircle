@@ -359,13 +359,21 @@ export default function CircleDetailScreen() {
         <>
           {olderTournamentsCount > 0 && (
             <Pressable
-              style={styles.toggleOlderButton}
+              style={[
+                styles.pastToggleButton,
+                showOlderTournaments && styles.pastToggleButtonActive,
+              ]}
               onPress={() => setShowOlderTournaments((prev) => !prev)}
             >
-              <Text style={styles.toggleOlderButtonText}>
+              <Text
+                style={[
+                  styles.pastToggleButtonText,
+                  showOlderTournaments && styles.pastToggleButtonTextActive,
+                ]}
+              >
                 {showOlderTournaments
-                  ? 'Hide completed tournaments'
-                  : `Show ${olderTournamentsCount} completed ${olderTournamentsCount === 1 ? 'tournament' : 'tournaments'}`}
+                  ? 'Hide Past Tournaments'
+                  : `Past Tournaments (${olderTournamentsCount})`}
               </Text>
             </Pressable>
           )}
@@ -398,13 +406,16 @@ export default function CircleDetailScreen() {
         <>
           {olderGamesCount > 0 && (
             <Pressable
-              style={styles.toggleOlderButton}
+              style={[styles.pastToggleButton, showOlderGames && styles.pastToggleButtonActive]}
               onPress={() => setShowOlderGames((prev) => !prev)}
             >
-              <Text style={styles.toggleOlderButtonText}>
-                {showOlderGames
-                  ? 'Hide older games'
-                  : `Show ${olderGamesCount} older ${olderGamesCount === 1 ? 'game' : 'games'}`}
+              <Text
+                style={[
+                  styles.pastToggleButtonText,
+                  showOlderGames && styles.pastToggleButtonTextActive,
+                ]}
+              >
+                {showOlderGames ? 'Hide Past Games' : `Past Games (${olderGamesCount})`}
               </Text>
             </Pressable>
           )}
@@ -1035,14 +1046,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  toggleOlderButton: {
+  pastToggleButton: {
     alignSelf: 'flex-start',
-    marginBottom: 10,
+    backgroundColor: '#F1F4F2',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D6DED9',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 12,
   },
-  toggleOlderButtonText: {
+  pastToggleButtonActive: {
+    backgroundColor: '#1F6F50',
+    borderColor: '#1F6F50',
+  },
+  pastToggleButtonText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1F6F50',
+  },
+  pastToggleButtonTextActive: {
+    color: '#fff',
   },
   joinButton: {
     marginTop: 10,
