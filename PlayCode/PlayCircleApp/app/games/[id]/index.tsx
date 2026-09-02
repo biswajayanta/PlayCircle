@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -80,8 +81,123 @@ function timeAgo(iso: string): string {
   return `${days}d ago`;
 }
 
+// One match in the game screen's match list. Renders as a table row when
+// `wide` (enough horizontal room for aligned columns), otherwise as the
+// stacked card used on phone widths. Both variants share the same derived
+// values and the same "show set/board details" toggle.
+function MatchRow({
+  m,
+  wide,
+  expanded,
+  onToggleDetails,
+}: {
+  m: MatchDetail;
+  wide: boolean;
+  expanded: boolean;
+  onToggleDetails: () => void;
+}) {
+  const team1 = teamNames(m, 1) || 'Team 1';
+  const team2 = teamNames(m, 2) || 'Team 2';
+  const score1 = m.score.team_1 ?? 0;
+  const score2 = m.score.team_2 ?? 0;
+  const isComplete = m.status === 'completed';
+  const isDraw = isComplete && score1 === score2;
+  const winnerTeam = isComplete && !isDraw ? (score1 > score2 ? 1 : 2) : null;
+  const winnerNames = winnerTeam ? teamNames(m, winnerTeam) : null;
+
+  const sets = m.score.sets;
+  const isSetBased = sets !== undefined;
+  const boardsPlayed = m.score.boards_played;
+  const isBoardBased = boardsPlayed !== undefined;
+  const hasDetails = isSetBased || isBoardBased;
+
+  const toggle = hasDetails ? (
+    <Pressable style={styles.matchDetailsToggle} onPress={onToggleDetails}>
+      <Text style={styles.matchDetailsToggleText}>
+        {expanded
+          ? '▾ Hide set/board details'
+          : `▸ Show ${isSetBased ? 'set' : 'board'} details`}
+      </Text>
+    </Pressable>
+  ) : null;
+
+  const detailBox =
+    expanded && isSetBased ? (
+      <View style={styles.matchDetailsBox}>
+        {(sets?.length ?? 0) === 0 ? (
+          <Text style={styles.matchDetailsEmptyText}>No sets completed yet.</Text>
+        ) : (
+          sets!.map((s, i) => (
+            <Text key={i} style={styles.matchDetailsRow}>
+              Set {i + 1}: {s.team_1}–{s.team_2} → {teamNames(m, s.winner)}
+            </Text>
+          ))
+        )}
+      </View>
+    ) : expanded && isBoardBased ? (
+      <View style={styles.matchDetailsBox}>
+        <Text style={styles.matchDetailsRow}>Boards played: {boardsPlayed}</Text>
+      </View>
+    ) : null;
+
+  if (wide) {
+    return (
+      <View>
+        <Pressable style={styles.matchRow} onPress={() => router.push(`/matches/${m.id}`)}>
+          <Text style={[styles.matchCell, styles.colFormat]} numberOfLines={1}>
+            {m.format}
+          </Text>
+          <Text style={[styles.matchCell, styles.colTeams]} numberOfLines={2}>
+            {team1} <Text style={styles.matchVsText}>vs</Text> {team2}
+          </Text>
+          <Text style={[styles.matchCell, styles.colScore]}>
+            {score1} – {score2}
+          </Text>
+          <Text style={[styles.matchCell, styles.colResult]} numberOfLines={1}>
+            {isComplete ? (isDraw ? "It's a draw" : `🏆 ${winnerNames}`) : '—'}
+          </Text>
+          <Text style={[styles.matchCell, styles.colStatus]} numberOfLines={1}>
+            {m.status.replace('_', ' ')}
+          </Text>
+        </Pressable>
+        {(toggle || detailBox) && (
+          <View style={styles.matchRowDetailWrap}>
+            {toggle}
+            {detailBox}
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.matchCard}>
+      <Pressable onPress={() => router.push(`/matches/${m.id}`)}>
+        <View style={styles.matchCardHeader}>
+          <Text style={styles.matchFormatText}>{m.format}</Text>
+          <Text style={styles.matchStatusText}>{m.status.replace('_', ' ')}</Text>
+        </View>
+        <Text style={styles.matchTeamsText} numberOfLines={2}>
+          {team1} <Text style={styles.matchVsText}>vs</Text> {team2}
+        </Text>
+        <Text style={styles.matchScoreText}>
+          {score1} – {score2}
+        </Text>
+        {isComplete && (
+          <Text style={styles.matchResultText}>
+            {isDraw ? "It's a draw" : `🏆 ${winnerNames} won`}
+          </Text>
+        )}
+      </Pressable>
+      {toggle}
+      {detailBox}
+    </View>
+  );
+}
+
 export default function GameDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { width: windowWidth } = useWindowDimensions();
 
   const [game, setGame] = useState<GameDetail | null>(null);
   const [me, setMe] = useState<UserMe | null>(null);
@@ -306,6 +422,9 @@ export default function GameDetailScreen() {
 
   const isGameOwner = me?.user_id === game.creator_user_id;
   const isActive = game.status !== 'completed' && game.status !== 'cancelled';
+  // Enough width to lay the match list out as an aligned table; below this
+  // the columns get too cramped, so fall back to stacked cards.
+  const isWideLayout = windowWidth >= 700;
 
   return (
     <View style={styles.container}>
@@ -377,78 +496,39 @@ export default function GameDetailScreen() {
               <Text style={styles.sectionLabel}>Matches</Text>
               {matches.length === 0 ? (
                 <Text style={styles.noMatchesText}>No matches recorded yet.</Text>
+              ) : isWideLayout ? (
+                <View style={styles.matchTable}>
+                  <View style={styles.matchTableHeader}>
+                    <Text style={[styles.matchHeaderCell, styles.colFormat]}>Format</Text>
+                    <Text style={[styles.matchHeaderCell, styles.colTeams]}>Match</Text>
+                    <Text style={[styles.matchHeaderCell, styles.colScore]}>Score</Text>
+                    <Text style={[styles.matchHeaderCell, styles.colResult]}>Result</Text>
+                    <Text style={[styles.matchHeaderCell, styles.colStatus]}>Status</Text>
+                  </View>
+                  {matches.map((m) => (
+                    <MatchRow
+                      key={m.id}
+                      m={m}
+                      wide
+                      expanded={expandedMatchId === m.id}
+                      onToggleDetails={() =>
+                        setExpandedMatchId(expandedMatchId === m.id ? null : m.id)
+                      }
+                    />
+                  ))}
+                </View>
               ) : (
-                matches.map((m) => {
-                  const team1 = teamNames(m, 1) || 'Team 1';
-                  const team2 = teamNames(m, 2) || 'Team 2';
-                  const score1 = m.score.team_1 ?? 0;
-                  const score2 = m.score.team_2 ?? 0;
-                  const isComplete = m.status === 'completed';
-                  const isDraw = isComplete && score1 === score2;
-                  const winnerTeam = isComplete && !isDraw ? (score1 > score2 ? 1 : 2) : null;
-                  const winnerNames = winnerTeam ? teamNames(m, winnerTeam) : null;
-
-                  const sets = m.score.sets;
-                  const isSetBased = sets !== undefined;
-                  const boardsPlayed = m.score.boards_played;
-                  const isBoardBased = boardsPlayed !== undefined;
-                  const isExpanded = expandedMatchId === m.id;
-
-                  return (
-                    <View key={m.id} style={styles.matchCard}>
-                      <Pressable onPress={() => router.push(`/matches/${m.id}`)}>
-                        <View style={styles.matchCardHeader}>
-                          <Text style={styles.matchFormatText}>{m.format}</Text>
-                          <Text style={styles.matchStatusText}>{m.status.replace('_', ' ')}</Text>
-                        </View>
-                        <Text style={styles.matchTeamsText} numberOfLines={2}>
-                          {team1} <Text style={styles.matchVsText}>vs</Text> {team2}
-                        </Text>
-                        <Text style={styles.matchScoreText}>
-                          {score1} – {score2}
-                        </Text>
-                        {isComplete && (
-                          <Text style={styles.matchResultText}>
-                            {isDraw ? "It's a draw" : `🏆 ${winnerNames} won`}
-                          </Text>
-                        )}
-                      </Pressable>
-
-                      {(isSetBased || isBoardBased) && (
-                        <Pressable
-                          style={styles.matchDetailsToggle}
-                          onPress={() => setExpandedMatchId(isExpanded ? null : m.id)}
-                        >
-                          <Text style={styles.matchDetailsToggleText}>
-                            {isExpanded
-                              ? '▾ Hide set/board details'
-                              : `▸ Show ${isSetBased ? 'set' : 'board'} details`}
-                          </Text>
-                        </Pressable>
-                      )}
-
-                      {isExpanded && isSetBased && (
-                        <View style={styles.matchDetailsBox}>
-                          {(sets?.length ?? 0) === 0 ? (
-                            <Text style={styles.matchDetailsEmptyText}>No sets completed yet.</Text>
-                          ) : (
-                            sets!.map((s, i) => (
-                              <Text key={i} style={styles.matchDetailsRow}>
-                                Set {i + 1}: {s.team_1}–{s.team_2} → {teamNames(m, s.winner)}
-                              </Text>
-                            ))
-                          )}
-                        </View>
-                      )}
-
-                      {isExpanded && isBoardBased && (
-                        <View style={styles.matchDetailsBox}>
-                          <Text style={styles.matchDetailsRow}>Boards played: {boardsPlayed}</Text>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })
+                matches.map((m) => (
+                  <MatchRow
+                    key={m.id}
+                    m={m}
+                    wide={false}
+                    expanded={expandedMatchId === m.id}
+                    onToggleDetails={() =>
+                      setExpandedMatchId(expandedMatchId === m.id ? null : m.id)
+                    }
+                  />
+                ))
               )}
               {isActive && !game.is_past && (
                 <Pressable
@@ -877,6 +957,78 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F4F2',
+  },
+  matchTable: {
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#E7ECE9',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  matchTableHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#F1F4F2',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E7ECE9',
+  },
+  matchHeaderCell: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7A73',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  matchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F4F2',
+  },
+  matchCell: {
+    fontSize: 13,
+    color: '#173A2E',
+  },
+  matchRowDetailWrap: {
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F4F2',
+  },
+  colFormat: {
+    flex: 1.1,
+    fontWeight: '600',
+    color: '#6B7A73',
+    textTransform: 'capitalize',
+  },
+  colTeams: {
+    flex: 3,
+    fontWeight: '600',
+  },
+  colScore: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  colResult: {
+    flex: 2.2,
+    color: '#1F6F50',
+    fontWeight: '600',
+  },
+  colStatus: {
+    flex: 1.3,
+    fontSize: 12,
+    color: '#8A968F',
+    textTransform: 'capitalize',
   },
   matchCardHeader: {
     flexDirection: 'row',
