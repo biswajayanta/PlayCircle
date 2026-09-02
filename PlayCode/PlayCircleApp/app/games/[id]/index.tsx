@@ -60,7 +60,10 @@ function formatScheduledAt(iso: string): string {
 }
 
 function teamNames(match: MatchDetail, team: number): string {
-  return match.participants
+  // Defensive: participants should always be present on MatchDetail, but
+  // don't let a stale/mismatched backend response crash the whole screen —
+  // fall back to an empty team name rather than throwing.
+  return (match.participants ?? [])
     .filter((p) => p.team === team)
     .map((p) => p.display_name)
     .join(' & ');
