@@ -406,3 +406,30 @@ export interface CircleLedger {
   fully_settled: boolean;
   entries: LedgerEntry[];
 }
+
+export interface PersonalContribution {
+  kind: 'expense_share' | 'transfer_sent' | 'transfer_received';
+  id: string;
+  description: string;
+  amount: string;
+  created_at: string;
+  counterparty_display_name: string | null;
+  is_payer: boolean;
+  game_id?: string | null;
+  sport_name?: string | null;
+  venue_name?: string | null;
+  game_scheduled_at?: string | null;
+}
+
+export interface PersonalCircleLedger {
+  circle_id: string;
+  circle_name: string;
+  balance: string;
+  quick_settle: SettlementSuggestion[];
+  entries: PersonalContribution[];
+}
+
+export interface UserLedgerOut {
+  user_id: string;
+  circles: PersonalCircleLedger[];
+}

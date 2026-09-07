@@ -360,7 +360,7 @@ async def create_match(
     return await _fetch_match_detail(pool, match_id)
 
 
-@router.get("/games/{game_id}/matches", response_model=list[MatchOut])
+@router.get("/games/{game_id}/matches", response_model=list[MatchDetail])
 async def list_matches_for_game(
     game_id: uuid.UUID,
     current_user_id: uuid.UUID = Depends(get_current_user_id),
@@ -379,12 +379,38 @@ async def list_matches_for_game(
         """,
         game_id,
     )
+    # One query for every match's participants (rather than N+1 per match)
+    # — the game detail screen needs "who's playing who" for every row in
+    # the list, not just the one a user drills into.
+    participant_rows = await pool.fetch(
+        """
+        SELECT mp.match_id, mp.user_id, u.display_name, mp.team, mp.points_scored, mp.result
+        FROM social.match_participants mp
+        JOIN social.matches m ON m.id = mp.match_id
+        JOIN core.users u ON u.id = mp.user_id
+        WHERE m.game_id = $1
+        ORDER BY mp.team, u.display_name
+        """,
+        game_id,
+    )
+    participants_by_match: dict[uuid.UUID, list[MatchParticipantOut]] = {}
+    for p in participant_rows:
+        participants_by_match.setdefault(p["match_id"], []).append(
+            MatchParticipantOut(**{k: v for k, v in dict(p).items() if k != "match_id"})
+        )
+
     result = []
     for r in rows:
         d = dict(r)
         if isinstance(d.get("score"), str):
             d["score"] = json.loads(d["score"])
-        result.append(MatchOut(**d))
+        match_out = MatchOut(**d)
+        result.append(
+            MatchDetail(
+                **match_out.model_dump(),
+                participants=participants_by_match.get(match_out.id, []),
+            )
+        )
     return result
 
 

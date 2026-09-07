@@ -14,9 +14,36 @@ import {
 import { showAlert } from '../../lib/alert';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/authContext';
-import { Sport, UserProfile } from '../../lib/types';
+import { PersonalContribution, SettlementSuggestion, Sport, UserLedgerOut, UserProfile } from '../../lib/types';
 
 const SUGGESTED_LEVELS = ['District', 'State', 'National', 'International', 'Club', 'Open'];
+
+function formatMoney(amount: string): string {
+  return `₹${Number(amount).toFixed(2)}`;
+}
+
+function formatContributionDate(iso: string): string {
+  const date = new Date(iso);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: sameYear ? undefined : 'numeric',
+  });
+}
+
+function contributionContext(c: PersonalContribution): string {
+  if (c.kind === 'expense_share') {
+    const game =
+      c.sport_name && c.venue_name
+        ? `${c.sport_name} · ${c.venue_name}`
+        : c.description;
+    return c.is_payer ? `You paid — ${game}` : `Your share — ${game}`;
+  }
+  return c.kind === 'transfer_sent'
+    ? `You paid ${c.counterparty_display_name ?? ''}`
+    : `${c.counterparty_display_name ?? ''} paid you`;
+}
 
 function formatDateOfBirth(iso: string): string {
   const dob = new Date(`${iso}T00:00:00`);
@@ -41,8 +68,15 @@ export default function ProfileScreen() {
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [sports, setSports] = useState<Sport[]>([]);
+  const [ledger, setLedger] = useState<UserLedgerOut | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [settleTarget, setSettleTarget] = useState<{
+    circleId: string;
+    suggestion: SettlementSuggestion;
+  } | null>(null);
+  const [settling, setSettling] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
   const [bioInput, setBioInput] = useState('');
@@ -80,6 +114,44 @@ export default function ProfileScreen() {
   useEffect(() => {
     api.get<Sport[]>('/sports').then(setSports).catch(() => {});
   }, []);
+
+  const loadLedger = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const result = await api.get<UserLedgerOut>(`/users/${userId}/ledger`);
+      setLedger(result);
+    } catch {
+      // Non-critical — the rest of the profile still works without it.
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    loadLedger();
+  }, [loadLedger]);
+
+  function openSettle(circleId: string, suggestion: SettlementSuggestion) {
+    setSettleTarget({ circleId, suggestion });
+  }
+
+  async function handleConfirmSettle() {
+    if (!settleTarget || settling) return;
+    setSettling(true);
+    try {
+      await api.post(`/circles/${settleTarget.circleId}/transfers`, {
+        from_user_id: settleTarget.suggestion.from_user_id,
+        to_user_id: settleTarget.suggestion.to_user_id,
+        amount: settleTarget.suggestion.amount,
+        note: 'Settled from profile',
+      });
+      setSettleTarget(null);
+      await loadLedger();
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Failed to record payment';
+      showAlert('Could not settle', message);
+    } finally {
+      setSettling(false);
+    }
+  }
 
   function openEdit() {
     if (!profile) return;
@@ -285,6 +357,68 @@ export default function ProfileScreen() {
             ))
           )}
         </View>
+
+        {ledger && ledger.circles.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>My Ledger</Text>
+            {ledger.circles.map((c) => {
+              const balanceValue = Number(c.balance);
+              return (
+                <View key={c.circle_id} style={styles.ledgerCircleCard}>
+                  <View style={styles.ledgerCircleHeader}>
+                    <Text style={styles.ledgerCircleName}>{c.circle_name}</Text>
+                    <Text
+                      style={[
+                        styles.ledgerBalanceText,
+                        balanceValue > 0 && styles.ledgerBalancePositive,
+                        balanceValue < 0 && styles.ledgerBalanceNegative,
+                      ]}
+                    >
+                      {balanceValue === 0
+                        ? 'Settled up'
+                        : balanceValue > 0
+                          ? `Is owed ${formatMoney(c.balance)}`
+                          : `Owes ${formatMoney(String(-balanceValue))}`}
+                    </Text>
+                  </View>
+
+                  {isOwnProfile &&
+                    c.quick_settle
+                      .filter((s) => s.from_user_id === user?.user_id)
+                      .map((s, i) => (
+                        <Pressable
+                          key={i}
+                          style={styles.settleButton}
+                          onPress={() => openSettle(c.circle_id, s)}
+                        >
+                          <Text style={styles.settleButtonText}>
+                            Pay {s.to_display_name} {formatMoney(s.amount)} →
+                          </Text>
+                        </Pressable>
+                      ))}
+
+                  {c.entries.length === 0 ? (
+                    <Text style={styles.emptyText}>Nothing recorded yet.</Text>
+                  ) : (
+                    c.entries.map((entry) => (
+                      <View key={entry.id} style={styles.ledgerEntryRow}>
+                        <View style={styles.ledgerEntryInfo}>
+                          <Text style={styles.ledgerEntryDescription} numberOfLines={1}>
+                            {contributionContext(entry)}
+                          </Text>
+                          <Text style={styles.ledgerEntryMeta}>
+                            {formatContributionDate(entry.created_at)}
+                          </Text>
+                        </View>
+                        <Text style={styles.ledgerEntryAmount}>{formatMoney(entry.amount)}</Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
 
       <Modal visible={editOpen} animationType="slide" transparent>
@@ -461,6 +595,40 @@ export default function ProfileScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={settleTarget !== null} animationType="fade" transparent>
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmCard}>
+            <Text style={styles.modalTitle}>Confirm payment</Text>
+            {settleTarget && (
+              <Text style={styles.confirmBodyText}>
+                Record that you paid{' '}
+                <Text style={{ fontWeight: '700' }}>{settleTarget.suggestion.to_display_name}</Text>{' '}
+                <Text style={{ fontWeight: '700' }}>{formatMoney(settleTarget.suggestion.amount)}</Text>?
+                This updates the circle ledger immediately.
+              </Text>
+            )}
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalCancelButton}
+                onPress={() => setSettleTarget(null)}
+                disabled={settling}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalConfirmButton, settling && styles.disabledButton]}
+                onPress={handleConfirmSettle}
+                disabled={settling}
+              >
+                <Text style={styles.modalConfirmButtonText}>
+                  {settling ? 'Recording...' : 'Confirm'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -606,4 +774,49 @@ const styles = StyleSheet.create({
   modalConfirmButton: { flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: '#1F6F50', alignItems: 'center' },
   modalConfirmButtonText: { color: '#fff', fontWeight: '700' },
   disabledButton: { opacity: 0.5 },
+  ledgerCircleCard: {
+    paddingTop: 12,
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F4F2',
+  },
+  ledgerCircleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  ledgerCircleName: { fontSize: 14, fontWeight: '700', color: '#173A2E' },
+  ledgerBalanceText: { fontSize: 13, fontWeight: '700', color: '#8A968F' },
+  ledgerBalancePositive: { color: '#1F6F50' },
+  ledgerBalanceNegative: { color: '#B3261E' },
+  settleButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#1F6F50',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginBottom: 10,
+  },
+  settleButtonText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  ledgerEntryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F4F2',
+  },
+  ledgerEntryInfo: { flex: 1, paddingRight: 8 },
+  ledgerEntryDescription: { fontSize: 13, color: '#173A2E' },
+  ledgerEntryMeta: { fontSize: 11, color: '#8A968F', marginTop: 1 },
+  ledgerEntryAmount: { fontSize: 13, fontWeight: '600', color: '#173A2E' },
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  confirmCard: { backgroundColor: '#fff', borderRadius: 12, padding: 20 },
+  confirmBodyText: { fontSize: 14, color: '#173A2E', lineHeight: 20, marginTop: 8 },
 });

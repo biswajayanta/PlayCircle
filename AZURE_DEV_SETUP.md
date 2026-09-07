@@ -132,3 +132,35 @@ running (but not yet deployed to — that's Section 3), and one Static Web App
 (same). Once you've run these and have both saved values (publish profile
 XML + deployment token) in hand, tell me and we'll move to wiring up the
 GitHub Actions side.
+
+---
+
+## Addendum: UAT environment
+
+UAT follows the exact same pattern as Dev above, on the same
+`playcircle-rg` resource group, `playcircle_uat` database (added to the
+same shared Postgres server via one more `db create` call), its own
+App Service (`playcircle-api-uat-<yourname>`) and Static Web App. It
+deploys automatically on every merge to `main` — no manual approval gate,
+unlike Prod.
+
+### A Key Vault lesson worth knowing before you hit it yourself
+
+When adding a new secret-backed app setting (e.g. an API key referenced
+via `@Microsoft.KeyVault(...)`), the reference can silently resolve to a
+**stale or wrong value** — Azure's Portal will show a green "Resolved"
+checkmark even when the actual runtime value isn't what you just set,
+and this can survive a secret version update *and* an App Service
+restart. If a newly-added secret-backed setting doesn't seem to be taking
+effect:
+
+1. Confirm the reference string itself is intact (no truncated closing
+   parenthesis — this fails silently, not loudly).
+2. As a diagnostic, temporarily paste the actual value in as **plain
+   text** instead of a Key Vault reference. If that works immediately,
+   you've confirmed it's a Key Vault resolution issue, not your code —
+   worth a support ticket if it persists, since it's ruled out everything
+   on the app's own side.
+3. Switch back to the Key Vault reference once resolved, rather than
+   leaving a real secret sitting as plain text long-term.
+

@@ -82,3 +82,30 @@ Never commit `.env`. Both `PlayCode/.env` and `PlayCode/PlayCircleApp/.env`
 are gitignored — if you ever see one show up in `git status` as
 untracked-but-about-to-be-added, stop and check your `.gitignore` before
 committing.
+
+## Known gotchas (things that have actually bitten this project)
+
+- **`uvicorn --reload` is not reliable in this setup**, especially on a
+  OneDrive-synced working folder (Windows file-watcher flakiness). If a
+  backend change doesn't seem to take effect, fully stop and restart
+  uvicorn manually before assuming the code is wrong — don't trust
+  `--reload` alone to confirm a fix landed.
+- **Frontend env changes need a real restart, not a save.** Expo/Metro
+  caches `EXPO_PUBLIC_*` values at startup — after editing `.env`, kill and
+  restart with `npx expo start --web --clear`.
+- **Azure Key Vault references can silently serve a stale value** even
+  after saving a new secret version and restarting the App Service. If a
+  value you just changed doesn't seem to be in effect, don't assume your
+  fix is wrong — verify by temporarily pasting the value in as plain text
+  (bypassing Key Vault entirely) to isolate whether Key Vault resolution
+  itself is the problem before spending more time chasing the "real" bug.
+- **Copy Key Vault reference strings carefully.** A truncated
+  `@Microsoft.KeyVault(...)` reference (missing the closing parenthesis is
+  an easy one) fails silently rather than erroring loudly — the app
+  starts fine, the specific feature depending on that secret just doesn't
+  work.
+- **A file edit isn't real until you've verified it landed.** Several real
+  bugs this project turned out to be "the fix was never actually saved to
+  the file" rather than a logic error. Before debugging further, grep the
+  actual file on disk for a distinctive string from the intended fix.
+
