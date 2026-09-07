@@ -43,6 +43,30 @@ project's manual verification, just formalized into a repeatable suite.
 | Game participants | `test_game_participants.py` | Footprint checks being bypassed, creator becoming removable |
 | Reports | `test_reports.py` | Bucket counts no longer summing correctly, access control gaps |
 
+## Known gap: features with no automated coverage yet
+
+Three substantial features were built and thoroughly *manually* tested
+(curl against a running local server, real UI walkthroughs) but never
+given actual `pytest` test files:
+
+- **Carrom / Pickleball scoring engines** (`app/scoring/`) — board
+  completion, bye handling, set-based win-by-2 logic, undo/redo across a
+  set boundary.
+- **Tournaments** (`app/tournaments/`, `app/routers/tournaments.py`) —
+  bracket generation (including bye/TBD-slot mechanics), winner
+  propagation through both the automatic and manual-conclude completion
+  paths, Round 1 add/remove/swap, and the lock-after-Round-1 rule.
+- **AI Assistant** (`app/assistant/`) — the tool-calling loop, the
+  confirm-before-action flow, and the dispatcher's calls into the real
+  API.
+- **Member profiles** (`app/routers/users.py` additions) — achievement
+  CRUD, the auto-computed performance stats query.
+
+This is real technical debt, not an oversight to ignore — these are
+exactly the areas most likely to regress silently as the codebase grows.
+Writing tests for these (following the existing `conftest.py` fixture
+pattern) is a good first task for anyone picking this project up.
+
 **Deliberately out of scope for now:** load/performance testing, and
 exhaustive edge-case fuzzing. This suite is aimed at "did we break
 something we already built," not "how much traffic can this take."
